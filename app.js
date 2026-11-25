@@ -1,36 +1,23 @@
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cfg = window.SNRD_CONFIG || {};
-const configured = Boolean(
-  cfg.supabaseUrl &&
-  cfg.supabaseAnonKey &&
+const configured = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey &&
   !String(cfg.supabaseUrl).includes('YOUR-PROJECT') &&
-  !String(cfg.supabaseAnonKey).includes('YOUR_SUPABASE')
-);
-
-const supabase = configured
-  ? createClient(cfg.supabaseUrl, cfg.supabaseAnonKey)
-  : null;
-
+  !String(cfg.supabaseAnonKey).includes('YOUR_SUPABASE'));
+const supabase = configured ? createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
 const $ = (id) => document.getElementById(id);
 
 let currentUser = null;
 let currentProfile = null;
 let currentPage = 'overview';
-let initializing = true;
-let loginBusy = false;
-let logoutBusy = false;
+let authReady = false;
+let authEventBusy = false;
 
 const titles = {
-  overview: 'Dashboard',
-  students: 'Students',
-  teachers: 'Teachers',
-  attendance: 'Attendance',
-  exams: 'Exams & Results',
-  fees: 'Fees',
-  documents: 'Documents',
-  reports: 'Reports',
-  settings: 'Settings'
+  overview: 'Dashboard', students: 'Students', teachers: 'Teachers',
+  attendance: 'Attendance', exams: 'Exams & Results', fees: 'Fees',
+  documents: 'Documents', reports: 'Reports', settings: 'Settings'
 };
 
 const roleLabel = {
@@ -41,54 +28,27 @@ const roleLabel = {
   student: 'Student'
 };
 
-function setVisible(el, visible) {
-  if (!el) return;
-
-  el.classList.toggle('hidden', !visible);
-  el.style.display = visible ? '' : 'none';
-}
-
 function toast(msg) {
   const el = $('toast');
   if (!el) return;
-
   el.textContent = msg;
   el.classList.add('show');
-
-  window.setTimeout(() => {
-    el.classList.remove('show');
-  }, 2800);
-}
-
-function closeMobileMenu() {
-  $('sidebar')?.classList.remove('open');
+  window.setTimeout(() => el.classList.remove('show'), 2800);
 }
 
 function showLogin(msg = '') {
-  currentUser = null;
-  currentProfile = null;
-
-  setVisible($('loginView'), true);
-  setVisible($('dashboardView'), false);
-  setVisible($('logoutBtn'), false);
-
-  closeMobileMenu();
-
-  setVisible($('previewPage'), false);
-  $('previewDrawer')?.classList.remove('open');
-  $('previewOverlay')?.classList.remove('show');
-
-  if ($('loginMessage')) {
-    $('loginMessage').textContent = msg;
-  }
+  $('loginView')?.classList.remove('hidden');
+  $('dashboardView')?.classList.add('hidden');
+  $('logoutBtn')?.classList.add('hidden');
+  $('sidebar')?.classList.remove('open');
+  if ($('loginMessage')) $('loginMessage').textContent = msg;
 }
 
 function showDashboard() {
-  setVisible($('loginView'), false);
-  setVisible($('dashboardView'), true);
-  setVisible($('logoutBtn'), true);
-
-  setVisible($('previewPage'), false);
+  $('loginView')?.classList.add('hidden');
+  $('dashboardView')?.classList.remove('hidden');
+  $('logoutBtn')?.classList.remove('hidden');
+  $('previewPage')?.classList.add('hidden');
   $('previewDrawer')?.classList.remove('open');
   $('previewOverlay')?.classList.remove('show');
 }
@@ -104,25 +64,24 @@ function safe(v) {
 }
 
 function stat(label, value, icon, caption = '') {
-  return `
-    <article class="stat-card">
-      <div class="stat-top">
-        <span>${safe(label)}</span>
-        <span class="stat-icon">${icon}</span>
-      </div>
-      <div class="stat-value">${safe(value)}</div>
-      <div class="stat-caption">${safe(caption)}</div>
-    </article>
-  `;
+  return `<article class="stat-card">
+    <div class="stat-top">
+      <span>${safe(label)}</span>
+      <span class="stat-icon">${icon}</span>
+    </div>
+    <div class="stat-value">${safe(value)}</div>
+    <div class="stat-caption">${safe(caption)}</div>
+  </article>`;
 }
 
 function empty(title, desc) {
-  return `<div class="empty-card"><strong>${safe(title)}</strong>${safe(desc)}</div>`;
+  return `<div class="empty-card">
+    <strong>${safe(title)}</strong>${safe(desc)}
+  </div>`;
 }
 
 async function loadProfile(user) {
-  const { data, error } = await supabase
-    .from('user_profiles')
+  const { data, error } = await supabase.from('user_profiles')
     .select('user_id,full_name,role,is_active')
     .eq('user_id', user.id)
     .maybeSingle();
@@ -130,104 +89,71 @@ async function loadProfile(user) {
   if (error) throw error;
 
   if (!data || !data.is_active) {
-    throw new Error(
-      'आपका सक्रिय User Profile नहीं मिला। School Admin से संपर्क करें।'
-    );
+    throw new Error('आपका सक्रिय User Profile नहीं मिला। School Admin से संपर्क करें।');
   }
 
   return data;
 }
 
-async function enterApp(user, profile) {
-  if (!user || !profile) return;
-
-  currentUser = user;
-  currentProfile = profile;
-
-  showDashboard();
-
-  if ($('userName')) {
-    $('userName').textContent =
-      profile.full_name || user.email || 'User';
-  }
-
-  if ($('userRole')) {
-    $('userRole').textContent =
-      roleLabel[profile.role] || profile.role || 'User';
-  }
-
-  if ($('userInitial')) {
-    $('userInitial').textContent =
-      (profile.full_name || 'S').trim().charAt(0).toUpperCase();
-  }
-
-  if ($('welcomeText')) {
-    $('welcomeText').textContent =
-      `Welcome, ${profile.full_name || 'User'}`;
-  }
-
-  if ($('todayLabel')) {
-    $('todayLabel').textContent =
-      new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium'
-      }).format(new Date());
-  }
-
-  applyRoleNavigation();
-  await renderPage('overview');
-}
-
 async function doLogin(e) {
   e.preventDefault();
 
-  if (loginBusy) return;
-
   if (!supabase) {
-    if ($('loginMessage')) {
-      $('loginMessage').textContent =
-        'Supabase configuration उपलब्ध नहीं है। School Admin से संपर्क करें।';
-    }
+    $('loginMessage').textContent =
+      'Supabase configuration उपलब्ध नहीं है। School Admin से संपर्क करें।';
     return;
   }
 
-  loginBusy = true;
-
   const btn = $('loginSubmit');
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Signing in…';
-  }
-
-  if ($('loginMessage')) {
-    $('loginMessage').textContent = '';
-  }
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  $('loginMessage').textContent = '';
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: $('email')?.value.trim(),
-      password: $('password')?.value
+      email: $('email').value.trim(),
+      password: $('password').value
     });
 
     if (error) throw error;
 
-    const profile = await loadProfile(data.user);
-
-    await enterApp(data.user, profile);
+    currentUser = data.user;
+    currentProfile = await loadProfile(data.user);
+    await enterApp();
 
   } catch (err) {
-    await supabase.auth.signOut().catch(() => {});
-
-    showLogin(err?.message || 'Login नहीं हो सका।');
+    currentUser = null;
+    currentProfile = null;
+    showLogin(err.message || 'Login नहीं हो सका।');
 
   } finally {
-    loginBusy = false;
-
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Login to Portal';
-    }
+    btn.disabled = false;
+    btn.textContent = 'Login to Portal';
   }
+}
+
+async function enterApp() {
+  if (!currentUser || !currentProfile) return;
+
+  showDashboard();
+
+  $('userName').textContent =
+    currentProfile.full_name || currentUser.email || 'User';
+
+  $('userRole').textContent =
+    roleLabel[currentProfile.role] || currentProfile.role || 'User';
+
+  $('userInitial').textContent =
+    (currentProfile.full_name || 'S').trim().charAt(0).toUpperCase();
+
+  $('welcomeText').textContent =
+    `Welcome, ${currentProfile.full_name || 'User'}`;
+
+  $('todayLabel').textContent =
+    new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(new Date());
+
+  applyRoleNavigation();
+  await renderPage('overview');
 }
 
 function applyRoleNavigation() {
@@ -235,39 +161,18 @@ function applyRoleNavigation() {
 
   document.querySelectorAll('.nav-item').forEach(b => {
     const page = b.dataset.page;
-
-    let allowed =
-      role === 'super_admin' ||
-      role === 'office_admin';
+    let allowed = role === 'super_admin' || role === 'office_admin';
 
     if (role === 'teacher') {
-      allowed = [
-        'overview',
-        'students',
-        'attendance',
-        'exams',
-        'documents'
-      ].includes(page);
+      allowed = ['overview', 'students', 'attendance', 'exams', 'documents'].includes(page);
     }
 
     if (role === 'parent') {
-      allowed = [
-        'overview',
-        'students',
-        'attendance',
-        'exams',
-        'fees',
-        'documents'
-      ].includes(page);
+      allowed = ['overview', 'students', 'attendance', 'exams', 'fees', 'documents'].includes(page);
     }
 
     if (role === 'student') {
-      allowed = [
-        'overview',
-        'attendance',
-        'exams',
-        'documents'
-      ].includes(page);
+      allowed = ['overview', 'attendance', 'exams', 'documents'].includes(page);
     }
 
     b.classList.toggle('hidden', !allowed);
@@ -279,46 +184,33 @@ async function renderPage(page) {
 
   currentPage = titles[page] ? page : 'overview';
 
-  if ($('pageTitle')) {
-    $('pageTitle').textContent = titles[currentPage];
-  }
+  $('pageTitle').textContent = titles[currentPage];
 
-  if ($('pageEyebrow')) {
-    $('pageEyebrow').textContent =
-      (currentProfile.role || '')
-        .replaceAll('_', ' ')
-        .toUpperCase();
-  }
+  $('pageEyebrow').textContent =
+    (currentProfile.role || '').replaceAll('_', ' ').toUpperCase();
 
-  document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle(
-      'active',
-      b.dataset.page === currentPage
-    );
-  });
+  document.querySelectorAll('.nav-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.page === currentPage)
+  );
 
   if (currentProfile.role === 'parent') {
-    return renderParent(currentPage);
+    await renderParent(currentPage);
+    return;
   }
 
-  if (
-    currentProfile.role === 'super_admin' ||
-    currentProfile.role === 'office_admin'
-  ) {
-    return renderAdmin(currentPage);
+  if (currentProfile.role === 'super_admin' ||
+      currentProfile.role === 'office_admin') {
+    await renderAdmin(currentPage);
+    return;
   }
 
-  if ($('pageContent')) {
-    $('pageContent').innerHTML = empty(
-      'Dashboard access is being configured',
-      'आपके Role की table permissions और संबंधित सुविधाएँ अभी तैयार की जा रही हैं।'
-    );
-  }
+  $('pageContent').innerHTML = empty(
+    'Dashboard access is being configured',
+    'आपके Role की table permissions और संबंधित सुविधाएँ अभी तैयार की जा रही हैं।'
+  );
 }
 
 async function renderAdmin(page) {
-  if (!$('pageContent')) return;
-
   if (page === 'overview') {
     $('pageContent').innerHTML = `
       <div class="stats">
@@ -332,7 +224,10 @@ async function renderAdmin(page) {
         <div class="panel">
           <h3>Quick Actions</h3>
           <div class="quick-actions">
-            <div class="quick-action"><b>＋</b>New Admission</div>
+            <div class="quick-action" data-action="new-admission"
+                 role="button" tabindex="0">
+              <b>＋</b>New Admission
+            </div>
             <div class="quick-action"><b>₹</b>Fee Collection</div>
             <div class="quick-action"><b>▤</b>Mark Entry</div>
             <div class="quick-action"><b>◷</b>Attendance</div>
@@ -347,86 +242,314 @@ async function renderAdmin(page) {
           </p>
           <p class="muted">Academic Session: April–March</p>
         </div>
-      </div>
-    `;
+      </div>`;
+
+    document.querySelector('[data-action="new-admission"]')
+      ?.addEventListener('click', showAdmissionForm);
 
     return;
   }
 
+  if (page === 'students') {
+    await renderStudents();
+    return;
+  }
+
   const map = {
-    students: [
-      'Student Register',
-      'Student list and admission workflow अभी connect/test होना बाकी है.'
-    ],
-    teachers: [
-      'Teacher Directory',
-      'Teacher profiles और staff assignments अभी configure होना बाकी है.'
-    ],
-    attendance: [
-      'Attendance',
-      'Attendance module अभी तैयार और test होना बाकी है.'
-    ],
-    exams: [
-      'Exams & Results',
-      'Exam setup और marksheet module अभी connect होना बाकी है.'
-    ],
-    fees: [
-      'Fees',
-      'Fee heads, dues, receipts और payment system अभी connect नहीं हैं.'
-    ],
-    documents: [
-      'Documents',
-      'Private document storage और access links अभी configure नहीं हैं.'
-    ],
-    reports: [
-      'Reports',
-      'Reports संबंधित modules connect होने के बाद उपलब्ध होंगे.'
-    ],
-    settings: [
-      'Settings',
-      'School settings और user management अभी तैयार किए जा रहे हैं.'
-    ]
+    teachers: ['Teacher Directory', 'Teacher profiles और staff assignments अभी configure होना बाकी है.'],
+    attendance: ['Attendance', 'Attendance module अभी तैयार और test होना बाकी है.'],
+    exams: ['Exams & Results', 'Exam setup और marksheet module अभी connect होना बाकी है.'],
+    fees: ['Fees', 'Fee heads, dues, receipts और payment system अभी connect नहीं हैं.'],
+    documents: ['Documents', 'Private document storage और access links अभी configure नहीं हैं.'],
+    reports: ['Reports', 'Reports संबंधित modules connect होने के बाद उपलब्ध होंगे.'],
+    settings: ['Settings', 'School settings और user management अभी तैयार किए जा रहे हैं.']
   };
 
-  $('pageContent').innerHTML = empty(
-    ...(map[page] || ['Coming soon', 'यह module अभी connect नहीं है.'])
-  );
+  $('pageContent').innerHTML =
+    empty(...(map[page] || ['Coming soon', 'यह module अभी connect नहीं है.']));
+}
+
+async function renderStudents() {
+  const { data, error } = await supabase.from('students')
+    .select('id,admission_number,full_name,date_of_birth,gender,admission_date,status')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    $('pageContent').innerHTML =
+      empty('Student register load नहीं हुआ', error.message);
+    return;
+  }
+
+  const rows = (data || []).map(s => `
+    <tr>
+      <td>${safe(s.admission_number || '—')}</td>
+      <td>${safe(s.full_name)}</td>
+      <td>${safe(s.gender || '—')}</td>
+      <td>${safe(s.admission_date || '—')}</td>
+      <td>${safe(s.status || '—')}</td>
+    </tr>
+  `).join('');
+
+  $('pageContent').innerHTML = `
+    <div class="panel" style="margin-bottom:16px">
+      <div style="display:flex;gap:12px;align-items:center;
+                  justify-content:space-between;flex-wrap:wrap">
+        <div>
+          <h3 style="margin:0">Student Register</h3>
+          <p class="muted" style="margin:6px 0 0">
+            कुल loaded records: ${data?.length || 0}
+          </p>
+        </div>
+
+        <button class="primary-btn" id="addStudentBtn" type="button">
+          ＋ Add New Admission
+        </button>
+      </div>
+
+      <input id="studentSearch" type="search"
+        placeholder="नाम / Admission No. खोजें"
+        style="margin-top:14px;width:100%;padding:12px;
+               border:1px solid #d5deea;border-radius:10px">
+    </div>
+
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Admission No.</th>
+              <th>Student Name</th>
+              <th>Gender</th>
+              <th>Admission Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="studentRows">
+            ${rows || '<tr><td colspan="5">अभी कोई विद्यार्थी रिकॉर्ड नहीं है।</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  $('addStudentBtn')?.addEventListener('click', showAdmissionForm);
+
+  $('studentSearch')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+
+    $('studentRows')?.querySelectorAll('tr').forEach(row => {
+      row.classList.toggle(
+        'hidden',
+        !row.textContent.toLowerCase().includes(q)
+      );
+    });
+  });
+}
+
+function showAdmissionForm() {
+  $('pageContent').innerHTML = `
+    <div class="panel">
+
+      <div style="display:flex;justify-content:space-between;
+                  align-items:center;gap:10px;flex-wrap:wrap">
+        <h3>New Student Admission</h3>
+
+        <button class="outline-btn" id="backToRegister" type="button">
+          ← Student Register
+        </button>
+      </div>
+
+      <form id="admissionForm">
+
+        <h4>Student Details</h4>
+
+        <div style="display:grid;
+                    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+                    gap:12px">
+
+          <label>Admission Number
+            <input name="admission_number"
+                   placeholder="Admission No." required>
+          </label>
+
+          <label>Student Full Name
+            <input name="full_name" required>
+          </label>
+
+          <label>Date of Birth
+            <input name="date_of_birth" type="date">
+          </label>
+
+          <label>Gender
+            <select name="gender">
+              <option value="">Select</option>
+              <option>Male</option>
+              <option>Female</option>
+              <option>Other</option>
+            </select>
+          </label>
+
+          <label>Admission Date
+            <input name="admission_date" type="date" required>
+          </label>
+
+          <label>Student Mobile (optional)
+            <input name="student_phone" type="tel">
+          </label>
+
+        </div>
+
+        <h4>Father Details</h4>
+
+        <div style="display:grid;
+                    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+                    gap:12px">
+
+          <label>Father's Name
+            <input name="father_name" required>
+          </label>
+
+          <label>Father's Mobile
+            <input name="father_mobile" type="tel">
+          </label>
+
+        </div>
+
+        <h4>Mother Details</h4>
+
+        <div style="display:grid;
+                    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+                    gap:12px">
+
+          <label>Mother's Name
+            <input name="mother_name" required>
+          </label>
+
+          <label>Mother's Mobile
+            <input name="mother_mobile" type="tel">
+          </label>
+
+        </div>
+
+        <h4>Guardian (Optional)</h4>
+
+        <div style="display:grid;
+                    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+                    gap:12px">
+
+          <label>Guardian Name
+            <input name="guardian_name">
+          </label>
+
+          <label>Guardian Mobile
+            <input name="guardian_mobile" type="tel">
+          </label>
+
+          <label>Relation
+            <input name="guardian_relation"
+                   placeholder="Uncle, Grandparent, etc.">
+          </label>
+
+        </div>
+
+        <h4>Address</h4>
+
+        <label>Full Address
+          <textarea name="address" rows="3"></textarea>
+        </label>
+
+        <p class="notice" style="display:block">
+          यह प्रारंभिक Admission Form है। Student record Save होगा;
+          Father/Mother/Guardian जानकारी फिलहाल form में collect होगी,
+          लेकिन Guardian tables में save करने से पहले उनके exact
+          column/relationship names verify करना जरूरी है।
+        </p>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+          <button class="primary-btn" type="submit">
+            Save Student Record
+          </button>
+
+          <button class="outline-btn" id="cancelAdmission" type="button">
+            Cancel
+          </button>
+        </div>
+
+        <p id="admissionMsg" role="status"></p>
+
+      </form>
+    </div>`;
+
+  $('backToRegister')?.addEventListener('click', renderStudents);
+  $('cancelAdmission')?.addEventListener('click', renderStudents);
+  $('admissionForm')?.addEventListener('submit', saveAdmission);
+}
+
+async function saveAdmission(e) {
+  e.preventDefault();
+
+  const form = e.currentTarget;
+  const fd = new FormData(form);
+
+  const payload = {
+    admission_number: String(fd.get('admission_number') || '').trim(),
+    full_name: String(fd.get('full_name') || '').trim(),
+    date_of_birth: fd.get('date_of_birth') || null,
+    gender: fd.get('gender') || null,
+    admission_date: fd.get('admission_date') || null,
+    student_phone: String(fd.get('student_phone') || '').trim() || null,
+    address: String(fd.get('address') || '').trim() || null,
+    status: 'active'
+  };
+
+  const msg = $('admissionMsg');
+  const btn = form.querySelector('button[type="submit"]');
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const { data, error } = await supabase.from('students')
+      .insert(payload)
+      .select('id,full_name,admission_number')
+      .single();
+
+    if (error) throw error;
+
+    msg.textContent =
+      `Student record saved successfully: ${data.full_name} (${data.admission_number}). Parent details are not yet written to guardian tables.`;
+
+    toast('Student record saved');
+
+    setTimeout(() => renderStudents(), 1200);
+
+  } catch (err) {
+    msg.textContent = 'Save failed: ' + (err.message || 'Unknown error');
+    btn.disabled = false;
+    btn.textContent = 'Save Student Record';
+  }
 }
 
 async function renderParent(page) {
-  if (!$('pageContent')) return;
-
   if (page !== 'overview' && page !== 'students') {
     $('pageContent').innerHTML = empty(
       (titles[page] || page) + ' module',
       'इस module का सुरक्षित data access configure और test होना बाकी है.'
     );
-
     return;
   }
 
-  const {
-    data: students,
-    error
-  } = await supabase
-    .from('students')
+  const { data: students, error } = await supabase.from('students')
     .select('id,admission_number,full_name,status')
     .order('full_name');
 
   if (error) {
-    $('pageContent').innerHTML = empty(
-      'Student list could not load',
-      error.message
-    );
-
+    $('pageContent').innerHTML =
+      empty('Student list could not load', error.message);
     return;
   }
 
-  const {
-    data: enrollments,
-    error: enErr
-  } = await supabase
-    .from('enrollments')
+  const { data: enrollments, error: enErr } = await supabase.from('enrollments')
     .select('student_id,roll_number,section_id,session_id,status');
 
   const byStudent = new Map(
@@ -436,23 +559,19 @@ async function renderParent(page) {
   const rows = (students || []).map(s => {
     const en = byStudent.get(s.id);
 
-    return `
-      <tr>
-        <td>
-          <div class="student-row">
-            <div class="student-photo">
-              ${safe((s.full_name || '?').charAt(0))}
-            </div>
-            <div>
-              <b>${safe(s.full_name)}</b><br>
-              <small>${safe(s.admission_number || 'Admission no. pending')}</small>
-            </div>
+    return `<tr>
+      <td>
+        <div class="student-row">
+          <div class="student-photo">${safe((s.full_name || '?').charAt(0))}</div>
+          <div>
+            <b>${safe(s.full_name)}</b><br>
+            <small>${safe(s.admission_number || 'Admission no. pending')}</small>
           </div>
-        </td>
-        <td>${safe(en?.roll_number || '—')}</td>
-        <td>${safe(en?.status || s.status || '—')}</td>
-      </tr>
-    `;
+        </div>
+      </td>
+      <td>${safe(en?.roll_number || '—')}</td>
+      <td>${safe(en?.status || s.status || '—')}</td>
+    </tr>`;
   }).join('');
 
   $('pageContent').innerHTML = `
@@ -465,29 +584,26 @@ async function renderParent(page) {
 
     <div class="panel">
       <h3>My Children</h3>
-      ${
-        students?.length
-          ? `
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Roll Number</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
-          `
-          : empty(
-              'No linked children found',
-              'School office has not linked a student to this family account yet.'
-            )
+
+      ${students?.length
+        ? `<div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Roll Number</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`
+        : empty(
+            'No linked children found',
+            'School office has not linked a student to this family account yet.'
+          )
       }
-    </div>
-  `;
+    </div>`;
 
   if (enErr) {
     toast('Enrollment detail could not be loaded: ' + enErr.message);
@@ -495,54 +611,42 @@ async function renderParent(page) {
 }
 
 async function logout() {
-  if (logoutBusy) return;
+  if (supabase) await supabase.auth.signOut();
 
-  logoutBusy = true;
+  currentUser = null;
+  currentProfile = null;
 
-  try {
-    if (supabase) {
-      const { error } = await supabase.auth.signOut();
-
-      if (error) throw error;
-    }
-
-    showLogin('आप लॉगआउट हो गए हैं।');
-
-  } catch (err) {
-    toast(err?.message || 'Logout नहीं हो सका।');
-
-  } finally {
-    logoutBusy = false;
-  }
+  showLogin('आप लॉगआउट हो गए हैं।');
 }
 
-function setupEvents() {
+function closeMobileMenu() {
+  $('sidebar')?.classList.remove('open');
+}
+
+async function init() {
+  // Avoid login/dashboard flicker while restoring the saved session.
+  $('loginView')?.classList.add('hidden');
+  $('dashboardView')?.classList.add('hidden');
+  $('previewPage')?.classList.add('hidden');
+  $('previewDrawer')?.classList.remove('open');
+  $('previewOverlay')?.classList.remove('show');
+
   $('loginForm')?.addEventListener('submit', doLogin);
 
   $('togglePassword')?.addEventListener('click', () => {
     const p = $('password');
-
-    if (!p) return;
-
     p.type = p.type === 'password' ? 'text' : 'password';
-
-    $('togglePassword').textContent =
-      p.type === 'password' ? 'Show' : 'Hide';
+    $('togglePassword').textContent = p.type === 'password' ? 'Show' : 'Hide';
   });
 
   $('logoutBtn')?.addEventListener('click', logout);
 
-  $('refreshBtn')?.addEventListener('click', () => {
-    renderPage(currentPage);
-  });
+  $('refreshBtn')?.addEventListener('click', () => renderPage(currentPage));
 
+  // Mobile dashboard sidebar menu
   $('menuBtn')?.addEventListener('click', () => {
-    if (
-      !currentUser ||
-      $('dashboardView')?.classList.contains('hidden')
-    ) {
-      return;
-    }
+    if (!currentUser ||
+        $('dashboardView')?.classList.contains('hidden')) return;
 
     $('sidebar')?.classList.toggle('open');
   });
@@ -555,72 +659,52 @@ function setupEvents() {
     closeMobileMenu();
     renderPage(b.dataset.page);
   });
-}
-
-async function init() {
-  // Hide both views while the saved session is checked.
-  setVisible($('loginView'), false);
-  setVisible($('dashboardView'), false);
-  setVisible($('logoutBtn'), false);
-  setVisible($('previewPage'), false);
-
-  $('previewDrawer')?.classList.remove('open');
-  $('previewOverlay')?.classList.remove('show');
-
-  setupEvents();
 
   if (!configured) {
-    showLogin(
-      'Preview mode: Supabase configuration अभी उपलब्ध नहीं है.'
-    );
-
-    initializing = false;
+    authReady = true;
+    showLogin('Preview mode: Supabase configuration अभी उपलब्ध नहीं है.');
     return;
   }
 
   try {
-    const {
-      data,
-      error
-    } = await supabase.auth.getSession();
+    const { data: { session }, error } = await supabase.auth.getSession();
 
     if (error) throw error;
 
-    if (data?.session?.user) {
-      const profile = await loadProfile(data.session.user);
-
-      await enterApp(data.session.user, profile);
-
+    if (session) {
+      currentUser = session.user;
+      currentProfile = await loadProfile(session.user);
+      await enterApp();
     } else {
       showLogin();
     }
 
   } catch (err) {
-    await supabase.auth.signOut().catch(() => {});
+    currentUser = null;
+    currentProfile = null;
 
     showLogin(
-      err?.message ||
-      'Session restore नहीं हो सका। कृपया फिर से login करें.'
+      err.message || 'Session restore नहीं हो सका। कृपया फिर से login करें.'
     );
 
   } finally {
-    initializing = false;
+    authReady = true;
   }
 
-  // Handle sign-out from another tab/device.
-  supabase.auth.onAuthStateChange((event) => {
-    if (initializing) return;
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (!authReady || authEventBusy) return;
 
     if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentProfile = null;
       showLogin();
     }
+
+    // INITIAL_SESSION / TOKEN_REFRESHED पर re-render नहीं करते।
   });
 }
 
 init().catch(err => {
   console.error('SNRD Portal initialization error:', err);
-
-  showLogin(
-    'Portal start नहीं हो सका। कृपया page reload करें.'
-  );
+  showLogin('Portal start नहीं हो सका। कृपया page reload करें.');
 });
