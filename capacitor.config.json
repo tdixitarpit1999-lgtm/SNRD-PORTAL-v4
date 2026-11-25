@@ -1,0 +1,8 @@
+{
+  "appId": "in.snrdportal.school",
+  "appName": "SNRD PORTAL",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

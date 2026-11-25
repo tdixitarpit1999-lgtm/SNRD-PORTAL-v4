@@ -1,0 +1,17 @@
+{
+  "name": "SNRD PORTAL",
+  "short_name": "SNRD",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0b2346",
+  "description": "S.S.S.NR.DIXIT School Management System",
+  "icons": [
+    {
+      "src": "./assets/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

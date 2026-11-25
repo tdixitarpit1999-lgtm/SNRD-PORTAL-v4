@@ -1,0 +1,11 @@
+SNRD PORTAL V4 - Upload guide (Hindi)
+
+1) ZIP ko phone me Extract karein.
+2) Extracted folder ke andar ke sabhi files aur folders select karein (folder khud upload na karein).
+3) GitHub repository > Add file > Upload files.
+4) Files ko repository ROOT me upload karein; kisi naye folder ke andar nahi.
+5) Existing same-name files replace/overwrite honi chahiye. GitHub agar conflict/duplicate warning de to ruk kar screenshot bhejein.
+6) Commit changes.
+7) GitHub Pages Settings > main branch > /(root) active rakhein.
+
+Public Pages preview is frontend only. Supabase placeholders config.js me hain; login/backend tab tak connect nahi hoga jab tak correct project URL and anon key set na ho. Service-role key kabhi public repo me upload na karein.

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b2346">
+  <meta name="description" content="SNRD PORTAL — School Management System">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./school-logo.png" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>SNRD PORTAL | School Management</title>
+</head>
+<body>
+  <div id="app">
+    <div id="previewOverlay" class="preview-overlay"></div>
+    <aside id="previewDrawer" class="preview-drawer"><h3>PORTAL PREVIEW MENU</h3><div id="previewMenuItems"></div></aside>
+    <main id="previewPage" class="preview-page hidden"></main>
+    <header class="topbar">
+      <button class="mobile-menu" id="menuBtn" aria-label="Open navigation">☰</button>
+      <div class="brand">
+        <img src="./school-logo.png" alt="SNRD crest" class="crest">
+        <div><strong>SNRD PORTAL</strong><small>School Management System</small></div>
+      </div>
+      <div class="school-name">S.S.S.NR.DIXIT IC/PS TODARPUR<br><span>BEWAR, MAINPURI</span></div>
+      <div class="top-actions"><span class="session-pill">Academic Session 2026–27</span><button id="logoutBtn" class="logout hidden">Log out</button></div>
+    </header>
+
+    <main id="loginView" class="login-wrap">
+      <section class="login-card">
+        <div class="login-art">
+          <img src="./school-logo.png" alt="" class="login-crest">
+          <p class="eyebrow">WELCOME TO</p>
+          <h1>SNRD PORTAL</h1>
+          <p>One school. One connected platform.</p>
+          <div class="login-highlights"><span>Admissions</span><span>Attendance</span><span>Results</span></div>
+        </div>
+        <form id="loginForm" class="login-form">
+          <div class="form-heading"><span class="eyebrow">SECURE ACCESS</span><h2>Sign in</h2><p>ईमेल और पासवर्ड से लॉगिन करें</p></div>
+          <label>Email address<input id="email" type="email" autocomplete="username" placeholder="name@example.com" required></label>
+          <label>Password<div class="password-wrap"><input id="password" type="password" autocomplete="current-password" placeholder="Enter password" required><button type="button" id="togglePassword" aria-label="Show password">Show</button></div></label>
+          <button class="primary-btn" type="submit" id="loginSubmit">Login to Portal</button>
+          <p id="loginMessage" class="message" role="status"></p>
+          <p class="login-foot">Access is provided by your school administrator.</p>
+        </form>
+      </section>
+      <p class="prototype-note">Secure backend connection is configured by the school administrator.</p>
+    </main>
+
+    <main id="dashboardView" class="dashboard hidden">
+      <aside class="sidebar" id="sidebar">
+        <div class="user-chip"><div class="avatar" id="userInitial">S</div><div><strong id="userName">User</strong><small id="userRole">Role</small></div></div>
+        <nav id="navList">
+          <button class="nav-item active" data-page="overview">▦ <span>Dashboard</span></button>
+          <button class="nav-item" data-page="students">♙ <span>Students</span></button>
+          <button class="nav-item" data-page="teachers">♧ <span>Teachers</span></button>
+          <button class="nav-item" data-page="attendance">◷ <span>Attendance</span></button>
+          <button class="nav-item" data-page="exams">▤ <span>Exams & Results</span></button>
+          <button class="nav-item" data-page="fees">₹ <span>Fees</span></button>
+          <button class="nav-item" data-page="documents">▣ <span>Documents</span></button>
+          <button class="nav-item" data-page="reports">▥ <span>Reports</span></button>
+          <button class="nav-item" data-page="settings">⚙ <span>Settings</span></button>
+        </nav>
+        <div class="sidebar-bottom">SNRD PORTAL <small>Version 3.0 starter</small></div>
+      </aside>
+      <section class="content">
+        <div class="page-head"><div><p class="eyebrow" id="pageEyebrow">SCHOOL OVERVIEW</p><h1 id="pageTitle">Dashboard</h1><p id="welcomeText">Welcome to SNRD PORTAL</p></div><div class="head-actions"><span class="date-chip" id="todayLabel"></span><button class="outline-btn" id="refreshBtn">↻ Refresh</button></div></div>
+        <div id="notice" class="notice hidden"></div>
+        <section id="pageContent"></section>
+        <footer>© S.S.S.NR.DIXIT IC/PS TODARPUR, BEWAR, MAINPURI · SNRD PORTAL</footer>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+  </div>
+  <script src="./config.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

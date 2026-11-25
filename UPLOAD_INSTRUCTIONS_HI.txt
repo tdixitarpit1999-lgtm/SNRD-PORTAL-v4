@@ -1,0 +1,10 @@
+SNRD PORTAL V4 — GitHub upload instructions (Hindi)
+
+1) Extract this ZIP on your phone.
+2) Open GitHub repository SNRD-PORTAL and choose Add file > Upload files.
+3) Select all SIX files in the extracted folder (not this README; README is outside the ZIP file list).
+4) Upload them into the repository ROOT (same level as existing files), not into a new folder.
+5) Commit changes. These files replace the current website frontend files.
+
+Files: index.html, app.js, styles.css, school-logo.png, logo.svg, manifest.webmanifest.
+Do not upload Supabase secret/service-role keys. This is a visual frontend preview; backend authentication/data is not connected yet.
