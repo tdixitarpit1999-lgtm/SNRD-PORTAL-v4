@@ -120,5 +120,4 @@ function openPreviewMenu(){
  drawer.classList.add('open');overlay.classList.add('show');
  $('previewMenuItems').querySelectorAll('[data-preview-page]').forEach(b=>b.addEventListener('click',()=>{drawer.classList.remove('open');overlay.classList.remove('show');previewModulePage(b.dataset.previewPage)}));
 }
-$('menuBtn')?.addEventListener('click',()=>{if($('loginView').classList.contains('hidden')){$('sidebar')?.classList.toggle('open')}else openPreviewMenu()});
 $('previewOverlay')?.addEventListener('click',()=>{$('previewDrawer').classList.remove('open');$('previewOverlay').classList.remove('show')});
