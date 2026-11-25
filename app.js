@@ -162,13 +162,94 @@ async function renderStudents() {
     $('pageContent').innerHTML = empty('Student register load नहीं हुआ', error.message);
     return;
   }
-  const rows = (data || []).map(s => `<tr><td>${safe(s.admission_number || '—')}</td><td>${safe(s.full_name)}</td><td>${safe(s.gender || '—')}</td><td>${safe(s.admission_date || '—')}</td><td>${safe(s.status || '—')}</td></tr>`).join('');
-  $('pageContent').innerHTML = `<div class="panel" style="margin-bottom:16px"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div><h3 style="margin:0">Student Register</h3><p class="muted" style="margin:6px 0 0">कुल loaded records: ${data?.length || 0}</p></div><button class="primary-btn" id="addStudentBtn" type="button">＋ Add New Admission</button></div><input id="studentSearch" type="search" placeholder="नाम / Admission No. खोजें" style="margin-top:14px;width:100%;padding:12px;border:1px solid #d5deea;border-radius:10px"></div><div class="panel"><div class="table-wrap"><table><thead><tr><th>Admission No.</th><th>Student Name</th><th>Gender</th><th>Admission Date</th><th>Status</th></tr></thead><tbody id="studentRows">${rows || '<tr><td colspan="5">अभी कोई विद्यार्थी रिकॉर्ड नहीं है।</td></tr>'}</tbody></table></div></div>`;
+
+  const studentIds = (data || []).map(s => s.id);
+  let docs = [];
+  if (studentIds.length) {
+    const { data: docData, error: docError } = await supabase.from('student_documents')
+      .select('id,student_id,document_type,file_name,storage_path,uploaded_at')
+      .in('student_id', studentIds).order('uploaded_at', { ascending: false });
+    if (docError) console.warn('Student documents list unavailable:', docError.message);
+    docs = docData || [];
+  }
+
+  // Private bucket: create short-lived signed links only for display.
+  const photoByStudent = new Map();
+  for (const d of docs.filter(x => x.document_type === 'student_photo')) {
+    if (photoByStudent.has(d.student_id)) continue;
+    const { data: signed, error: signError } = await supabase.storage
+      .from('student-documents').createSignedUrl(d.storage_path, 3600);
+    if (!signError && signed?.signedUrl) photoByStudent.set(d.student_id, signed.signedUrl);
+  }
+
+  const rows = (data || []).map(s => {
+    const photo = photoByStudent.get(s.id);
+    const avatar = photo
+      ? `<img src="${safe(photo)}" alt="${safe(s.full_name)} photo" class="student-register-photo" loading="lazy">`
+      : `<span class="student-register-avatar">${safe((s.full_name || '?').trim().charAt(0).toUpperCase())}</span>`;
+    const docCount = docs.filter(d => d.student_id === s.id).length;
+    return `<tr data-student-id="${safe(s.id)}">
+      <td>${safe(s.admission_number || '—')}</td>
+      <td><div class="student-register-name">${avatar}<span>${safe(s.full_name || '—')}</span></div></td>
+      <td>${safe(s.gender || '—')}</td>
+      <td>${safe(s.admission_date || '—')}</td>
+      <td>${safe(s.status || '—')}</td>
+      <td><button type="button" class="outline-btn student-docs-btn" data-student-id="${safe(s.id)}">Documents (${docCount})</button></td>
+    </tr>`;
+  }).join('');
+
+  $('pageContent').innerHTML = `
+    <div class="panel" style="margin-bottom:16px">
+      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div><h3 style="margin:0">Student Register</h3><p class="muted" style="margin:6px 0 0">कुल loaded records: ${data?.length || 0}</p></div>
+        <button class="primary-btn" id="addStudentBtn" type="button">＋ Add New Admission</button>
+      </div>
+      <input id="studentSearch" type="search" placeholder="नाम / Admission No. खोजें" style="margin-top:14px;width:100%;padding:12px;border:1px solid #d5deea;border-radius:10px">
+    </div>
+    <div class="panel"><div class="table-wrap"><table>
+      <thead><tr><th>Admission No.</th><th>Student</th><th>Gender</th><th>Admission Date</th><th>Status</th><th>Documents</th></tr></thead>
+      <tbody id="studentRows">${rows || '<tr><td colspan="6">अभी कोई विद्यार्थी रिकॉर्ड नहीं है।</td></tr>'}</tbody>
+    </table></div></div>
+    <div id="studentDocsPanel" class="panel hidden" style="margin-top:16px"></div>
+    <style>
+      .student-register-name{display:flex;align-items:center;gap:10px;min-width:150px}
+      .student-register-photo,.student-register-avatar{width:44px;height:44px;min-width:44px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;background:#e6eefb;color:#174a8b;font-weight:700}
+      .student-docs-btn{white-space:nowrap;padding:8px 12px}
+    </style>`;
   $('addStudentBtn')?.addEventListener('click', showAdmissionForm);
   $('studentSearch')?.addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
     $('studentRows')?.querySelectorAll('tr').forEach(row => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(q)));
   });
+  document.querySelectorAll('.student-docs-btn').forEach(btn => btn.addEventListener('click', () => showStudentDocuments(btn.dataset.studentId, data, docs)));
+}
+
+async function showStudentDocuments(studentId, students, docs) {
+  const student = (students || []).find(s => String(s.id) === String(studentId));
+  const panel = $('studentDocsPanel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  panel.innerHTML = `<h3>${safe(student?.full_name || 'Student')} — Documents</h3><p>Private documents के लिए temporary secure links बनाए जा रहे हैं…</p>`;
+  const list = (docs || []).filter(d => String(d.student_id) === String(studentId));
+  if (!list.length) {
+    panel.innerHTML = `<h3>${safe(student?.full_name || 'Student')} — Documents</h3><p class="muted">इस विद्यार्थी के लिए अभी कोई document upload नहीं है।</p><button class="outline-btn" id="closeDocsPanel" type="button">Close</button>`;
+    $('closeDocsPanel')?.addEventListener('click', () => panel.classList.add('hidden'));
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const items = [];
+  for (const d of list) {
+    const { data: signed, error } = await supabase.storage.from('student-documents').createSignedUrl(d.storage_path, 3600);
+    if (error || !signed?.signedUrl) {
+      items.push(`<li>${safe(d.file_name)} <small>(link नहीं बन सका)</small></li>`);
+    } else {
+      const label = safe(d.document_type.replaceAll('_', ' '));
+      items.push(`<li><b>${label}</b> — ${safe(d.file_name)} <a href="${safe(signed.signedUrl)}" target="_blank" rel="noopener">View / Download</a></li>`);
+    }
+  }
+  panel.innerHTML = `<h3>${safe(student?.full_name || 'Student')} — Documents</h3><ul style="padding-left:22px;line-height:2">${items.join('')}</ul><p class="muted">Links 1 घंटे में expire हो जाएंगे। केवल अधिकृत Admin को documents access करना चाहिए।</p><button class="outline-btn" id="closeDocsPanel" type="button">Close</button>`;
+  $('closeDocsPanel')?.addEventListener('click', () => panel.classList.add('hidden'));
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function showAdmissionForm() {
@@ -267,6 +348,7 @@ async function refreshOfferingAndSections() {
   admissionData.sections = data || [];
   fillSelect('adSection', admissionData.sections, x => x.id, x => x.section_name, 'Select section');
 }
+
 async function saveAdmission(e) {
   e.preventDefault();
   const form = e.currentTarget;
@@ -276,7 +358,6 @@ async function saveAdmission(e) {
   btn.disabled = true;
   btn.textContent = 'Saving admission…';
   msg.textContent = '';
-
   const payload = {
     p_admission_number: String(fd.get('admission_number') || '').trim(),
     p_full_name: String(fd.get('full_name') || '').trim(),
@@ -293,84 +374,35 @@ async function saveAdmission(e) {
     p_mother_name: String(fd.get('mother_name') || '').trim(),
     p_mother_mobile: String(fd.get('mother_mobile') || '').trim() || null
   };
-
   try {
-    if (!payload.p_session_id || !payload.p_section_id) {
-      throw new Error('Academic Session और Section चुनना जरूरी है।');
-    }
-
+    if (!payload.p_session_id || !payload.p_section_id) throw new Error('Academic Session और Section चुनना जरूरी है।');
     const { data, error } = await supabase.rpc('save_student_admission', payload);
     if (error) throw error;
-
     const studentId = data;
     const pen = String(fd.get('pen_number') || '').trim();
-
     if (pen) {
-      const { error: penError } = await supabase
-        .from('students')
-        .update({ pen_number: pen })
-        .eq('id', studentId);
-
-      if (penError) {
-        throw new Error('Admission सेव हो गया, लेकिन PEN सेव नहीं हुआ: ' + penError.message);
-      }
+      const { error: penError } = await supabase.from('students').update({ pen_number: pen }).eq('id', studentId);
+      if (penError) throw new Error('Admission सेव हो गया, लेकिन PEN सेव नहीं हुआ: ' + penError.message);
     }
-
     const documentMap = [
-      ['student_photo', 'student_photo'],
-      ['student_aadhaar_doc', 'student_aadhaar'],
-      ['father_aadhaar_doc', 'father_aadhaar'],
-      ['mother_aadhaar_doc', 'mother_aadhaar'],
-      ['birth_certificate', 'birth_certificate'],
-      ['tc_document', 'transfer_certificate'],
+      ['student_photo', 'student_photo'], ['student_aadhaar_doc', 'student_aadhaar'],
+      ['father_aadhaar_doc', 'father_aadhaar'], ['mother_aadhaar_doc', 'mother_aadhaar'],
+      ['birth_certificate', 'birth_certificate'], ['tc_document', 'transfer_certificate'],
       ['previous_marksheet', 'previous_marksheet']
     ];
-
-    const filesToUpload = documentMap
-      .map(([field, type]) => ({ file: fd.get(field), type }))
-      .filter(x => x.file && x.file.size);
-
+    const filesToUpload = documentMap.map(([field, type]) => ({ file: fd.get(field), type })).filter(x => x.file && x.file.size);
     for (const item of filesToUpload) {
-      if (item.file.size > 10 * 1024 * 1024) {
-        throw new Error(`${item.file.name}: file 10 MB से बड़ी है।`);
-      }
-
-      const ext = (item.file.name.split('.').pop() || 'file')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '');
-
+      if (item.file.size > 10 * 1024 * 1024) throw new Error(`${item.file.name}: file 10 MB से बड़ी है।`);
+      const ext = (item.file.name.split('.').pop() || 'file').toLowerCase().replace(/[^a-z0-9]/g, '');
       const path = `${studentId}/${item.type}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('student-documents')
-        .upload(path, item.file, {
-          contentType: item.file.type,
-          upsert: false
-        });
-
-      if (uploadError) {
-        throw new Error('Admission सेव हुआ, लेकिन दस्तावेज़ अपलोड नहीं हुआ: ' + uploadError.message);
-      }
-
-      const { error: recordError } = await supabase
-        .from('student_documents')
-        .insert({
-          student_id: studentId,
-          document_type: item.type,
-          file_name: item.file.name,
-          storage_path: path,
-          uploaded_by: currentUser?.id
-        });
-
-      if (recordError) {
-        throw new Error('File अपलोड हुई, लेकिन document record सेव नहीं हुआ: ' + recordError.message);
-      }
+      const { error: uploadError } = await supabase.storage.from('student-documents').upload(path, item.file, { contentType: item.file.type, upsert: false });
+      if (uploadError) throw new Error('Admission सेव हुआ, लेकिन दस्तावेज़ अपलोड नहीं हुआ: ' + uploadError.message);
+      const { error: recordError } = await supabase.from('student_documents').insert({ student_id: studentId, document_type: item.type, file_name: item.file.name, storage_path: path, uploaded_by: currentUser?.id });
+      if (recordError) throw new Error('File अपलोड हुई, लेकिन document record सेव नहीं हुआ: ' + recordError.message);
     }
-
     msg.textContent = `Admission सफल! Student ID: ${studentId}${filesToUpload.length ? ` | ${filesToUpload.length} documents uploaded` : ''}`;
     toast('Admission successfully saved');
     setTimeout(() => renderStudents(), 1800);
-
   } catch (err) {
     msg.textContent = 'Admission save नहीं हुआ: ' + (err.message || 'Unknown error');
     btn.disabled = false;
@@ -380,34 +412,23 @@ async function saveAdmission(e) {
 
 async function renderParent(page) {
   if (page !== 'overview' && page !== 'students') {
-    $('pageContent').innerHTML = empty(
-      (titles[page] || page) + ' module',
-      'इस module का सुरक्षित data access configure और test होना बाकी है.'
-    );
+    $('pageContent').innerHTML = empty((titles[page] || page) + ' module', 'इस module का सुरक्षित data access configure और test होना बाकी है.');
     return;
   }
-
   const { data: students, error } = await supabase.from('students')
-    .select('id,admission_number,full_name,status')
-    .order('full_name');
-
+    .select('id,admission_number,full_name,status').order('full_name');
   if (error) {
     $('pageContent').innerHTML = empty('Student list could not load', error.message);
     return;
   }
-
   const { data: enrollments, error: enErr } = await supabase.from('enrollments')
     .select('student_id,roll_number,section_id,session_id,status');
-
   const byStudent = new Map((enrollments || []).map(x => [x.student_id, x]));
-
   const rows = (students || []).map(s => {
     const en = byStudent.get(s.id);
     return `<tr><td><div class="student-row"><div class="student-photo">${safe((s.full_name || '?').charAt(0))}</div><div><b>${safe(s.full_name)}</b><br><small>${safe(s.admission_number || 'Admission no. pending')}</small></div></div></td><td>${safe(en?.roll_number || '—')}</td><td>${safe(en?.status || s.status || '—')}</td></tr>`;
   }).join('');
-
   $('pageContent').innerHTML = `<div class="stats">${stat('My Children', students?.length ?? 0, '♙', 'Linked student profiles')}${stat('Attendance', '—', '◷', 'Attendance module pending')}${stat('Fees', '—', '₹', 'Fee module pending')}${stat('Results', '—', '▤', 'Exam module pending')}</div><div class="panel"><h3>My Children</h3>${students?.length ? `<div class="table-wrap"><table><thead><tr><th>Student</th><th>Roll Number</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('No linked children found', 'School office has not linked a student to this family account yet.')}</div>`;
-
   if (enErr) toast('Enrollment detail could not be loaded: ' + enErr.message);
 }
 
@@ -417,10 +438,7 @@ async function logout() {
   currentProfile = null;
   showLogin('आप लॉगआउट हो गए हैं।');
 }
-
-function closeMobileMenu() {
-  $('sidebar')?.classList.remove('open');
-}
+function closeMobileMenu() { $('sidebar')?.classList.remove('open'); }
 
 async function init() {
   $('loginView')?.classList.add('hidden');
@@ -428,67 +446,35 @@ async function init() {
   $('previewPage')?.classList.add('hidden');
   $('previewDrawer')?.classList.remove('open');
   $('previewOverlay')?.classList.remove('show');
-
   $('loginForm')?.addEventListener('submit', doLogin);
-
   $('togglePassword')?.addEventListener('click', () => {
-    const p = $('password');
-    p.type = p.type === 'password' ? 'text' : 'password';
+    const p = $('password'); p.type = p.type === 'password' ? 'text' : 'password';
     $('togglePassword').textContent = p.type === 'password' ? 'Show' : 'Hide';
   });
-
   $('logoutBtn')?.addEventListener('click', logout);
   $('refreshBtn')?.addEventListener('click', () => renderPage(currentPage));
-
   $('menuBtn')?.addEventListener('click', () => {
     if (!currentUser || $('dashboardView')?.classList.contains('hidden')) return;
     $('sidebar')?.classList.toggle('open');
   });
-
   $('navList')?.addEventListener('click', e => {
     const b = e.target.closest('[data-page]');
     if (!b || b.classList.contains('hidden')) return;
-    closeMobileMenu();
-    renderPage(b.dataset.page);
+    closeMobileMenu(); renderPage(b.dataset.page);
   });
-
-  if (!configured) {
-    authReady = true;
-    showLogin('Preview mode: Supabase configuration अभी उपलब्ध नहीं है.');
-    return;
-  }
-
+  if (!configured) { authReady = true; showLogin('Preview mode: Supabase configuration अभी उपलब्ध नहीं है.'); return; }
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error) throw error;
-
-    if (session) {
-      currentUser = session.user;
-      currentProfile = await loadProfile(session.user);
-      await enterApp();
-    } else {
-      showLogin();
-    }
-
+    if (session) { currentUser = session.user; currentProfile = await loadProfile(session.user); await enterApp(); }
+    else showLogin();
   } catch (err) {
-    currentUser = null;
-    currentProfile = null;
+    currentUser = null; currentProfile = null;
     showLogin(err.message || 'Session restore नहीं हो सका। कृपया फिर से login करें.');
-  } finally {
-    authReady = true;
-  }
-
+  } finally { authReady = true; }
   supabase.auth.onAuthStateChange((event) => {
     if (!authReady || authEventBusy) return;
-    if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      currentProfile = null;
-      showLogin();
-    }
+    if (event === 'SIGNED_OUT') { currentUser = null; currentProfile = null; showLogin(); }
   });
 }
-
-init().catch(err => {
-  console.error('SNRD Portal initialization error:', err);
-  showLogin('Portal start नहीं हो सका। कृपया page reload करें.');
-});
+init().catch(err => { console.error('SNRD Portal initialization error:', err); showLogin('Portal start नहीं हो सका। कृपया page reload करें.'); });
