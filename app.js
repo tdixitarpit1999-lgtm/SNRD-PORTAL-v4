@@ -1,18 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cfg = window.SNRD_CONFIG || {};
-const configured = Boolean(
-  cfg.supabaseUrl &&
-  cfg.supabaseAnonKey &&
+const configured = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey &&
   !String(cfg.supabaseUrl).includes('YOUR-PROJECT') &&
-  !String(cfg.supabaseAnonKey).includes('YOUR_SUPABASE')
-);
-
-const supabase = configured
-  ? createClient(cfg.supabaseUrl, cfg.supabaseAnonKey)
-  : null;
-
-const $ = id => document.getElementById(id);
+  !String(cfg.supabaseAnonKey).includes('YOUR_SUPABASE'));
+const supabase = configured ? createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
+const $ = (id) => document.getElementById(id);
 
 let currentUser = null;
 let currentProfile = null;
@@ -21,46 +14,29 @@ let authReady = false;
 let authEventBusy = false;
 
 const titles = {
-  overview: 'Dashboard',
-  students: 'Students',
-  teachers: 'Teachers',
-  attendance: 'Attendance',
-  exams: 'Exams & Results',
-  fees: 'Fees',
-  documents: 'Documents',
-  reports: 'Reports',
-  settings: 'Settings'
+  overview: 'Dashboard', students: 'Students', teachers: 'Teachers',
+  attendance: 'Attendance', exams: 'Exams & Results', fees: 'Fees',
+  documents: 'Documents', reports: 'Reports', settings: 'Settings'
 };
-
 const roleLabel = {
-  super_admin: 'Super Admin',
-  office_admin: 'Office Admin',
-  teacher: 'Teacher',
-  parent: 'Parent / Family',
-  student: 'Student'
+  super_admin: 'Super Admin', office_admin: 'Office Admin',
+  teacher: 'Teacher', parent: 'Parent / Family', student: 'Student'
 };
 
 function toast(msg) {
   const el = $('toast');
   if (!el) return;
-
   el.textContent = msg;
   el.classList.add('show');
-
   window.setTimeout(() => el.classList.remove('show'), 2800);
 }
-
 function showLogin(msg = '') {
   $('loginView')?.classList.remove('hidden');
   $('dashboardView')?.classList.add('hidden');
   $('logoutBtn')?.classList.add('hidden');
   $('sidebar')?.classList.remove('open');
-
-  if ($('loginMessage')) {
-    $('loginMessage').textContent = msg;
-  }
+  if ($('loginMessage')) $('loginMessage').textContent = msg;
 }
-
 function showDashboard() {
   $('loginView')?.classList.add('hidden');
   $('dashboardView')?.classList.remove('hidden');
@@ -69,91 +45,48 @@ function showDashboard() {
   $('previewDrawer')?.classList.remove('open');
   $('previewOverlay')?.classList.remove('show');
 }
-
 function safe(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
-
 function stat(label, value, icon, caption = '') {
-  return `
-    <article class="stat-card">
-      <div class="stat-top">
-        <span>${safe(label)}</span>
-        <span class="stat-icon">${icon}</span>
-      </div>
-      <div class="stat-value">${safe(value)}</div>
-      <div class="stat-caption">${safe(caption)}</div>
-    </article>
-  `;
+  return `<article class="stat-card"><div class="stat-top"><span>${safe(label)}</span><span class="stat-icon">${icon}</span></div><div class="stat-value">${safe(value)}</div><div class="stat-caption">${safe(caption)}</div></article>`;
 }
-
 function empty(title, desc) {
-  return `
-    <div class="empty-card">
-      <strong>${safe(title)}</strong>
-      ${safe(desc)}
-    </div>
-  `;
+  return `<div class="empty-card"><strong>${safe(title)}</strong>${safe(desc)}</div>`;
 }
 
 async function loadProfile(user) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('user_id,full_name,role,is_active')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
+  const { data, error } = await supabase.from('user_profiles')
+    .select('user_id,full_name,role,is_active').eq('user_id', user.id).maybeSingle();
   if (error) throw error;
-
-  if (!data || !data.is_active) {
-    throw new Error(
-      'आपका सक्रिय User Profile नहीं मिला। School Admin से संपर्क करें।'
-    );
-  }
-
+  if (!data || !data.is_active) throw new Error('आपका सक्रिय User Profile नहीं मिला। School Admin से संपर्क करें।');
   return data;
 }
 
 async function doLogin(e) {
   e.preventDefault();
-
   if (!supabase) {
-    $('loginMessage').textContent =
-      'Supabase configuration उपलब्ध नहीं है। School Admin से संपर्क करें।';
+    $('loginMessage').textContent = 'Supabase configuration उपलब्ध नहीं है। School Admin से संपर्क करें।';
     return;
   }
-
   const btn = $('loginSubmit');
   btn.disabled = true;
   btn.textContent = 'Signing in…';
-
   $('loginMessage').textContent = '';
-
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: $('email').value.trim(),
-      password: $('password').value
+      email: $('email').value.trim(), password: $('password').value
     });
-
     if (error) throw error;
-
     currentUser = data.user;
     currentProfile = await loadProfile(data.user);
-
     await enterApp();
-
   } catch (err) {
     currentUser = null;
     currentProfile = null;
-
     showLogin(err.message || 'Login नहीं हो सका।');
-
   } finally {
     btn.disabled = false;
     btn.textContent = 'Login to Portal';
@@ -162,926 +95,288 @@ async function doLogin(e) {
 
 async function enterApp() {
   if (!currentUser || !currentProfile) return;
-
   showDashboard();
-
-  $('userName').textContent =
-    currentProfile.full_name || currentUser.email || 'User';
-
-  $('userRole').textContent =
-    roleLabel[currentProfile.role] || currentProfile.role || 'User';
-
-  $('userInitial').textContent =
-    (currentProfile.full_name || 'S')
-      .trim()
-      .charAt(0)
-      .toUpperCase();
-
-  $('welcomeText').textContent =
-    `Welcome, ${currentProfile.full_name || 'User'}`;
-
-  $('todayLabel').textContent =
-    new Intl.DateTimeFormat('en-IN', {
-      dateStyle: 'medium'
-    }).format(new Date());
-
+  $('userName').textContent = currentProfile.full_name || currentUser.email || 'User';
+  $('userRole').textContent = roleLabel[currentProfile.role] || currentProfile.role || 'User';
+  $('userInitial').textContent = (currentProfile.full_name || 'S').trim().charAt(0).toUpperCase();
+  $('welcomeText').textContent = `Welcome, ${currentProfile.full_name || 'User'}`;
+  $('todayLabel').textContent = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(new Date());
   applyRoleNavigation();
-
   await renderPage('overview');
 }
 
 function applyRoleNavigation() {
   const role = currentProfile?.role;
-
   document.querySelectorAll('.nav-item').forEach(b => {
     const page = b.dataset.page;
-
-    let allowed =
-      role === 'super_admin' ||
-      role === 'office_admin';
-
-    if (role === 'teacher') {
-      allowed = [
-        'overview',
-        'students',
-        'attendance',
-        'exams',
-        'documents'
-      ].includes(page);
-    }
-
-    if (role === 'parent') {
-      allowed = [
-        'overview',
-        'students',
-        'attendance',
-        'exams',
-        'fees',
-        'documents'
-      ].includes(page);
-    }
-
-    if (role === 'student') {
-      allowed = [
-        'overview',
-        'attendance',
-        'exams',
-        'documents'
-      ].includes(page);
-    }
-
+    let allowed = role === 'super_admin' || role === 'office_admin';
+    if (role === 'teacher') allowed = ['overview', 'students', 'attendance', 'exams', 'documents'].includes(page);
+    if (role === 'parent') allowed = ['overview', 'students', 'attendance', 'exams', 'fees', 'documents'].includes(page);
+    if (role === 'student') allowed = ['overview', 'attendance', 'exams', 'documents'].includes(page);
     b.classList.toggle('hidden', !allowed);
   });
 }
 
 async function renderPage(page) {
   if (!currentProfile) return;
-
   currentPage = titles[page] ? page : 'overview';
-
   $('pageTitle').textContent = titles[currentPage];
-
-  $('pageEyebrow').textContent =
-    (currentProfile.role || '')
-      .replaceAll('_', ' ')
-      .toUpperCase();
-
-  document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle(
-      'active',
-      b.dataset.page === currentPage
-    );
-  });
-
+  $('pageEyebrow').textContent = (currentProfile.role || '').replaceAll('_', ' ').toUpperCase();
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === currentPage));
   if (currentProfile.role === 'parent') {
     await renderParent(currentPage);
     return;
   }
-
-  if (
-    currentProfile.role === 'super_admin' ||
-    currentProfile.role === 'office_admin'
-  ) {
+  if (currentProfile.role === 'super_admin' || currentProfile.role === 'office_admin') {
     await renderAdmin(currentPage);
     return;
   }
-
-  $('pageContent').innerHTML = empty(
-    'Dashboard access is being configured',
-    'आपके Role की table permissions और संबंधित सुविधाएँ अभी तैयार की जा रही हैं।'
-  );
+  $('pageContent').innerHTML = empty('Dashboard access is being configured', 'आपके Role की table permissions और संबंधित सुविधाएँ अभी तैयार की जा रही हैं।');
 }
 
 async function renderAdmin(page) {
   if (page === 'overview') {
-    $('pageContent').innerHTML = `
-      <div class="stats">
-        ${stat('Students', '—', '♙', 'Student records')}
-        ${stat('Teachers', '—', '♧', 'Teacher profiles')}
-        ${stat('Classes', 'PG–12', '▤', 'English + Hindi sections')}
-        ${stat('Sections', '—', '▦', 'Admin-defined sections')}
-      </div>
-
-      <div class="panel-grid">
-        <div class="panel">
-          <h3>Quick Actions</h3>
-
-          <div class="quick-actions">
-            <div class="quick-action"
-                 data-action="new-admission"
-                 role="button"
-                 tabindex="0">
-              <b>＋</b>New Admission
-            </div>
-
-            <div class="quick-action">
-              <b>₹</b>Fee Collection
-            </div>
-
-            <div class="quick-action">
-              <b>▤</b>Mark Entry
-            </div>
-
-            <div class="quick-action">
-              <b>◷</b>Attendance
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>School Structure</h3>
-
-          <p class="muted">
-            PG–5 English · Classes 6–8 Hindi + English ·
-            Classes 9–12 Hindi · Classes 11–12 Science / Arts
-          </p>
-
-          <p class="muted">
-            Academic Session: April–March
-          </p>
-        </div>
-      </div>
-    `;
-
-    document.querySelector('[data-action="new-admission"]')
-      ?.addEventListener('click', showAdmissionForm);
-
+    $('pageContent').innerHTML = `<div class="stats">${stat('Students', '—', '♙', 'Verified data setup के बाद count')}${stat('Teachers', '—', '♧', 'Teacher profiles')}${stat('Classes', 'PG–12', '▤', 'English + Hindi sections')}${stat('Sections', '—', '▦', 'Admin-defined sections')}</div>
+      <div class="panel-grid"><div class="panel"><h3>Quick Actions</h3><div class="quick-actions"><div class="quick-action" data-action="new-admission" role="button" tabindex="0"><b>＋</b>New Admission</div><div class="quick-action"><b>₹</b>Fee Collection</div><div class="quick-action"><b>▤</b>Mark Entry</div><div class="quick-action"><b>◷</b>Attendance</div></div></div><div class="panel"><h3>School Structure</h3><p class="muted">PG–5 English · Classes 6–8 Hindi + English · Classes 9–12 Hindi · Classes 11–12 Science / Arts</p><p class="muted">Academic Session: April–March</p></div></div>`;
+    document.querySelector('[data-action="new-admission"]')?.addEventListener('click', showAdmissionForm);
     return;
   }
-
-  if (page === 'students') {
-    await renderStudents();
-    return;
-  }
-
+  if (page === 'students') { await renderStudents(); return; }
   const map = {
-    teachers: [
-      'Teacher Directory',
-      'Teacher profiles और staff assignments अभी configure होना बाकी है.'
-    ],
-
-    attendance: [
-      'Attendance',
-      'Attendance module अभी तैयार और test होना बाकी है.'
-    ],
-
-    exams: [
-      'Exams & Results',
-      'Exam setup और marksheet module अभी connect होना बाकी है.'
-    ],
-
-    fees: [
-      'Fees',
-      'Fee heads, dues, receipts और payment system अभी connect नहीं हैं.'
-    ],
-
-    documents: [
-      'Documents',
-      'Private document storage और access links अभी configure नहीं हैं.'
-    ],
-
-    reports: [
-      'Reports',
-      'Reports संबंधित modules connect होने के बाद उपलब्ध होंगे.'
-    ],
-
-    settings: [
-      'Settings',
-      'School settings और user management अभी तैयार किए जा रहे हैं.'
-    ]
+    teachers: ['Teacher Directory', 'Teacher profiles और staff assignments अभी configure होना बाकी है.'],
+    attendance: ['Attendance', 'Attendance module अभी तैयार और test होना बाकी है.'],
+    exams: ['Exams & Results', 'Exam setup और marksheet module अभी connect होना बाकी है.'],
+    fees: ['Fees', 'Fee heads, dues, receipts और payment system अभी connect नहीं हैं.'],
+    documents: ['Documents', 'Private document storage और access links अभी configure नहीं हैं.'],
+    reports: ['Reports', 'Reports संबंधित modules connect होने के बाद उपलब्ध होंगे.'],
+    settings: ['Settings', 'School settings और user management अभी तैयार किए जा रहे हैं.']
   };
-
-  $('pageContent').innerHTML = empty(
-    ...(map[page] || [
-      'Coming soon',
-      'यह module अभी connect नहीं है.'
-    ])
-  );
+  $('pageContent').innerHTML = empty(...(map[page] || ['Coming soon', 'यह module अभी connect नहीं है.']));
 }
 
 async function renderStudents() {
-  const { data, error } = await supabase
-    .from('students')
-    .select(`
-      id,
-      admission_number,
-      full_name,
-      date_of_birth,
-      gender,
-      admission_date,
-      status
-    `)
-    .order('created_at', { ascending: false })
-    .limit(200);
-
+  const { data, error } = await supabase.from('students')
+    .select('id,admission_number,full_name,date_of_birth,gender,admission_date,status')
+    .order('created_at', { ascending: false }).limit(200);
   if (error) {
-    $('pageContent').innerHTML = empty(
-      'Student register load नहीं हुआ',
-      error.message
-    );
+    $('pageContent').innerHTML = empty('Student register load नहीं हुआ', error.message);
     return;
   }
-
-  const rows = (data || []).map(s => `
-    <tr>
-      <td>${safe(s.admission_number || '—')}</td>
-      <td>${safe(s.full_name)}</td>
-      <td>${safe(s.gender || '—')}</td>
-      <td>${safe(s.admission_date || '—')}</td>
-      <td>${safe(s.status || '—')}</td>
-    </tr>
-  `).join('');
-
-  $('pageContent').innerHTML = `
-    <div class="panel" style="margin-bottom:16px">
-
-      <div style="
-        display:flex;
-        gap:12px;
-        align-items:center;
-        justify-content:space-between;
-        flex-wrap:wrap
-      ">
-        <div>
-          <h3 style="margin:0">Student Register</h3>
-
-          <p class="muted" style="margin:6px 0 0">
-            कुल loaded records: ${data?.length || 0}
-          </p>
-        </div>
-
-        <button class="primary-btn"
-                id="addStudentBtn"
-                type="button">
-          ＋ Add New Admission
-        </button>
-      </div>
-
-      <input
-        id="studentSearch"
-        type="search"
-        placeholder="नाम / Admission No. खोजें"
-        style="
-          margin-top:14px;
-          width:100%;
-          padding:12px;
-          border:1px solid #d5deea;
-          border-radius:10px
-        "
-      >
-    </div>
-
-    <div class="panel">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Admission No.</th>
-              <th>Student Name</th>
-              <th>Gender</th>
-              <th>Admission Date</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-
-          <tbody id="studentRows">
-            ${rows || `
-              <tr>
-                <td colspan="5">
-                  अभी कोई विद्यार्थी रिकॉर्ड नहीं है।
-                </td>
-              </tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-
-  $('addStudentBtn')
-    ?.addEventListener('click', showAdmissionForm);
-
-  $('studentSearch')
-    ?.addEventListener('input', e => {
-      const q = e.target.value.toLowerCase();
-
-      $('studentRows')
-        ?.querySelectorAll('tr')
-        .forEach(row => {
-          row.classList.toggle(
-            'hidden',
-            !row.textContent.toLowerCase().includes(q)
-          );
-        });
-    });
+  const rows = (data || []).map(s => `<tr><td>${safe(s.admission_number || '—')}</td><td>${safe(s.full_name)}</td><td>${safe(s.gender || '—')}</td><td>${safe(s.admission_date || '—')}</td><td>${safe(s.status || '—')}</td></tr>`).join('');
+  $('pageContent').innerHTML = `<div class="panel" style="margin-bottom:16px"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div><h3 style="margin:0">Student Register</h3><p class="muted" style="margin:6px 0 0">कुल loaded records: ${data?.length || 0}</p></div><button class="primary-btn" id="addStudentBtn" type="button">＋ Add New Admission</button></div><input id="studentSearch" type="search" placeholder="नाम / Admission No. खोजें" style="margin-top:14px;width:100%;padding:12px;border:1px solid #d5deea;border-radius:10px"></div><div class="panel"><div class="table-wrap"><table><thead><tr><th>Admission No.</th><th>Student Name</th><th>Gender</th><th>Admission Date</th><th>Status</th></tr></thead><tbody id="studentRows">${rows || '<tr><td colspan="5">अभी कोई विद्यार्थी रिकॉर्ड नहीं है।</td></tr>'}</tbody></table></div></div>`;
+  $('addStudentBtn')?.addEventListener('click', showAdmissionForm);
+  $('studentSearch')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    $('studentRows')?.querySelectorAll('tr').forEach(row => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(q)));
+  });
 }
 
-/* ==========================================
-   ADMISSION MODULE
-========================================== */
-
-function selectOptions(items, valueKey, labelKey, firstText = 'Select') {
-  return `
-    <option value="">${safe(firstText)}</option>
-    ${(items || []).map(item => `
-      <option value="${safe(item[valueKey])}">
-        ${safe(item[labelKey])}
-      </option>
-    `).join('')}
-  `;
+function showAdmissionForm() {
+  const today = new Date().toISOString().slice(0, 10);
+  $('pageContent').innerHTML = `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3>New Student Admission</h3><button class="outline-btn" id="backToRegister" type="button">← Student Register</button></div>
+  <form id="admissionForm">
+  <h4>Student Details</h4><div class="form-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+  <label>Admission Number<input name="admission_number" placeholder="Admission No." required></label>
+  <label>Student Full Name<input name="full_name" required></label>
+  <label>Date of Birth<input name="date_of_birth" type="date"></label>
+  <label>Gender<select name="gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></label>
+  <label>Admission Date<input name="admission_date" type="date" value="${today}" required></label>
+  <label>Student Mobile (optional)<input name="student_phone" type="tel"></label>
+  <label>PEN Number (optional)<input name="pen_number" inputmode="text" autocomplete="off" maxlength="30" placeholder="Permanent Education Number"></label></div>
+  <h4>Academic Placement</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+  <label>Academic Session<select name="session_id" id="adSession" required><option value="">Loading sessions…</option></select></label>
+  <label>Class<select name="class_id" id="adClass" required><option value="">Loading classes…</option></select></label>
+  <label>Medium<select name="medium_id" id="adMedium" required><option value="">Select medium</option></select></label>
+  <label>Stream (11–12)<select name="stream_id" id="adStream"><option value="">Not applicable</option></select></label>
+  <label>Section<select name="section_id" id="adSection" required><option value="">Class/medium पहले चुनें</option></select></label>
+  <label>Roll Number<input name="roll_number" placeholder="Optional"></label></div>
+  <h4>Father Details</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Father's Name<input name="father_name" required></label><label>Father's Mobile<input name="father_mobile" type="tel"></label></div>
+  <h4>Mother Details</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Mother's Name<input name="mother_name" required></label><label>Mother's Mobile<input name="mother_mobile" type="tel"></label></div>
+  <h4>Address</h4><label>Full Address<textarea name="address" rows="3"></textarea></label>
+  <h4>Documents Upload (Optional)</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+  <label>Student Photo<input name="student_photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+  <label>Student Aadhaar Card (if required)<input name="student_aadhaar_doc" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+  <label>Father Aadhaar Card (if required)<input name="father_aadhaar_doc" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+  <label>Mother Aadhaar Card (if required)<input name="mother_aadhaar_doc" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+  <label>Birth Certificate<input name="birth_certificate" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+  <label>Transfer Certificate (TC)<input name="tc_document" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+  <label>Previous Marksheet<input name="previous_marksheet" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label></div>
+  <p class="muted">केवल आवश्यक दस्तावेज़ अपलोड करें। Aadhaar नंबर यहाँ दर्ज न करें। Files 10 MB तक।</p>
+  <p class="notice" style="display:block">Save करने पर Student, Parents और Enrollment records database में एक transaction के अंतर्गत save होंगे।</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><button class="primary-btn" type="submit">Save Admission</button><button class="outline-btn" id="cancelAdmission" type="button">Cancel</button></div><p id="admissionMsg" role="status"></p></form></div>`;
+  $('backToRegister')?.addEventListener('click', renderStudents);
+  $('cancelAdmission')?.addEventListener('click', renderStudents);
+  $('admissionForm')?.addEventListener('submit', saveAdmission);
+  loadAdmissionDropdowns().catch(err => {
+    $('admissionMsg').textContent = 'Dropdown data load नहीं हुआ: ' + err.message;
+  });
 }
 
-async function showAdmissionForm() {
-  $('pageContent').innerHTML = `
-    <div class="panel">
+let admissionData = { sessions: [], classes: [], mediums: [], streams: [], offerings: [], sections: [] };
 
-      <div style="
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        gap:10px;
-        flex-wrap:wrap
-      ">
-        <h3>New Student Admission</h3>
-
-        <button class="outline-btn"
-                id="backToRegister"
-                type="button">
-          ← Student Register
-        </button>
-      </div>
-
-      <form id="admissionForm">
-
-        <h4>Student Details</h4>
-
-        <div class="form-grid"
-             style="
-               display:grid;
-               grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-               gap:12px
-             ">
-
-          <label>
-            Admission Number
-            <input name="admission_number"
-                   placeholder="Admission No."
-                   required>
-          </label>
-
-          <label>
-            Student Full Name
-            <input name="full_name"
-                   required>
-          </label>
-
-          <label>
-            Date of Birth
-            <input name="date_of_birth"
-                   type="date">
-          </label>
-
-          <label>
-            Gender
-            <select name="gender">
-              <option value="">Select</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-          </label>
-
-          <label>
-            Admission Date
-            <input name="admission_date"
-                   type="date"
-                   required>
-          </label>
-
-          <label>
-            Student Mobile (Optional)
-            <input name="student_phone"
-                   type="tel">
-          </label>
-
-        </div>
-
-        <h4>Academic Details</h4>
-
-        <div style="
-          display:grid;
-          grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-          gap:12px
-        ">
-
-          <label>
-            Academic Session
-            <select name="session_id"
-                    id="sessionSelect"
-                    required>
-              <option value="">Loading sessions...</option>
-            </select>
-          </label>
-
-          <label>
-            Class
-            <select name="class_id"
-                    id="classSelect"
-                    required>
-              <option value="">Select Session first</option>
-            </select>
-          </label>
-
-          <label>
-            Medium
-            <select name="medium_id"
-                    id="mediumSelect"
-                    required>
-              <option value="">Select Class first</option>
-            </select>
-          </label>
-
-          <label id="streamLabel"
-                 class="hidden">
-            Stream
-            <select name="stream_id"
-                    id="streamSelect">
-              <option value="">Select Stream</option>
-            </select>
-          </label>
-
-          <label>
-            Section
-            <select name="section_id"
-                    id="sectionSelect"
-                    required>
-              <option value="">Select Medium first</option>
-            </select>
-          </label>
-
-          <label>
-            Roll Number
-            <input name="roll_number"
-                   id="rollNumber"
-                   placeholder="Roll No.">
-          </label>
-
-        </div>
-
-        <h4>Father Details</h4>
-
-        <div style="
-          display:grid;
-          grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-          gap:12px
-        ">
-          <label>
-            Father's Name
-            <input name="father_name"
-                   required>
-          </label>
-
-          <label>
-            Father's Mobile
-            <input name="father_mobile"
-                   type="tel">
-          </label>
-        </div>
-
-        <h4>Mother Details</h4>
-
-        <div style="
-          display:grid;
-          grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-          gap:12px
-        ">
-          <label>
-            Mother's Name
-            <input name="mother_name"
-                   required>
-          </label>
-
-          <label>
-            Mother's Mobile
-            <input name="mother_mobile"
-                   type="tel">
-          </label>
-        </div>
-
-        <h4>Address</h4>
-
-        <label>
-          Full Address
-          <textarea name="address"
-                    rows="3"></textarea>
-        </label>
-
-        <div style="
-          display:flex;
-          gap:10px;
-          flex-wrap:wrap;
-          margin-top:16px
-        ">
-          <button class="primary-btn"
-                  type="submit">
-            Save Admission
-          </button>
-
-          <button class="outline-btn"
-                  id="cancelAdmission"
-                  type="button">
-            Cancel
-          </button>
-        </div>
-
-        <p id="admissionMsg"
-           role="status"></p>
-
-      </form>
-    </div>
-  `;
-
-  $('backToRegister')
-    ?.addEventListener('click', renderStudents);
-
-  $('cancelAdmission')
-    ?.addEventListener('click', renderStudents);
-
-  $('admissionForm')
-    ?.addEventListener('submit', saveAdmission);
-
-  $('sessionSelect')
-    ?.addEventListener('change', loadClasses);
-
-  $('classSelect')
-    ?.addEventListener('change', loadMediums);
-
-  $('mediumSelect')
-    ?.addEventListener('change', loadStreamsAndSections);
-
-  $('streamSelect')
-    ?.addEventListener('change', loadSections);
-
-  await loadSessions();
+async function loadAdmissionDropdowns() {
+  const [sessionsRes, classesRes, mediumsRes, streamsRes, offeringsRes] = await Promise.all([
+    supabase.from('academic_sessions').select('id,session_name,start_date,end_date').order('start_date', { ascending: false }),
+    supabase.from('classes').select('id,class_name,sort_order').order('sort_order'),
+    supabase.from('mediums').select('id,medium_name').order('medium_name'),
+    supabase.from('streams').select('id,stream_name').order('stream_name'),
+    supabase.from('class_offerings').select('id,class_id,medium_id,stream_id')
+  ]);
+  for (const r of [sessionsRes, classesRes, mediumsRes, streamsRes, offeringsRes]) if (r.error) throw r.error;
+  admissionData = { sessions: sessionsRes.data || [], classes: classesRes.data || [], mediums: mediumsRes.data || [], streams: streamsRes.data || [], offerings: offeringsRes.data || [], sections: [] };
+  fillSelect('adSession', admissionData.sessions, x => x.id, x => x.session_name, 'Select session');
+  fillSelect('adClass', admissionData.classes, x => x.id, x => x.class_name, 'Select class');
+  fillSelect('adMedium', admissionData.mediums, x => x.id, x => x.medium_name, 'Select medium');
+  fillSelect('adStream', admissionData.streams, x => x.id, x => x.stream_name, 'Not applicable');
+  $('adClass').addEventListener('change', refreshOfferingAndSections);
+  $('adMedium').addEventListener('change', refreshOfferingAndSections);
+  $('adStream').addEventListener('change', refreshOfferingAndSections);
+  $('adSession').addEventListener('change', refreshOfferingAndSections);
+  refreshOfferingAndSections();
 }
 
-async function loadSessions() {
-  const select = $('sessionSelect');
-
-  const { data, error } = await supabase
-    .from('academic_sessions')
-    .select('id,session_name,start_date,end_date')
-    .order('start_date', { ascending: false });
-
-  if (error) {
-    select.innerHTML = '<option value="">Session load error</option>';
-    toast(error.message);
-    return;
-  }
-
-  select.innerHTML = selectOptions(
-    data,
-    'id',
-    'session_name',
-    'Select Academic Session'
-  );
+function fillSelect(id, items, valueFn, labelFn, placeholder) {
+  const el = $(id);
+  if (!el) return;
+  el.innerHTML = `<option value="">${safe(placeholder)}</option>` + (items || []).map(x => `<option value="${safe(valueFn(x))}">${safe(labelFn(x))}</option>`).join('');
 }
 
-async function loadClasses() {
-  const sessionId = $('sessionSelect').value;
-
-  $('classSelect').innerHTML =
-    '<option value="">Loading classes...</option>';
-
-  $('mediumSelect').innerHTML =
-    '<option value="">Select Class first</option>';
-
-  $('sectionSelect').innerHTML =
-    '<option value="">Select Medium first</option>';
-
-  $('streamSelect').innerHTML =
-    '<option value="">Select Stream</option>';
-
-  $('streamLabel').classList.add('hidden');
-
-  if (!sessionId) return;
-
-  const { data: offerings, error } = await supabase
-    .from('class_offerings')
-    .select('class_id')
-    .order('class_id');
-
-  if (error) {
-    toast('Classes load नहीं हुई: ' + error.message);
+async function refreshOfferingAndSections() {
+  const classId = $('adClass')?.value;
+  const mediumId = $('adMedium')?.value;
+  const streamId = $('adStream')?.value || null;
+  const sessionId = $('adSession')?.value;
+  const streamSelect = $('adStream');
+  const applicableStreams = admissionData.streams;
+  if (!classId || !mediumId || !sessionId) {
+    fillSelect('adSection', [], x => x.id, x => x.section_name, 'Class, medium और session चुनें');
     return;
   }
-
-  const classIds = [...new Set(
-    (offerings || []).map(x => x.class_id)
-  )];
-
-  if (!classIds.length) {
-    $('classSelect').innerHTML =
-      '<option value="">No classes configured</option>';
+  const offerings = admissionData.offerings.filter(o => String(o.class_id) === String(classId) && String(o.medium_id) === String(mediumId));
+  const hasStreams = offerings.some(o => o.stream_id != null);
+  streamSelect.disabled = !hasStreams;
+  if (!hasStreams) streamSelect.value = '';
+  const matching = offerings.filter(o => hasStreams ? String(o.stream_id || '') === String(streamId || '') : o.stream_id == null);
+  if (!matching.length) {
+    fillSelect('adSection', [], x => x.id, x => x.section_name, hasStreams ? 'Stream चुनें / offering नहीं मिली' : 'Offering नहीं मिली');
     return;
   }
-
-  const { data: classes, error: classError } = await supabase
-    .from('classes')
-    .select('id,class_name,sort_order')
-    .in('id', classIds)
-    .order('sort_order');
-
-  if (classError) {
-    toast(classError.message);
-    return;
-  }
-
-  $('classSelect').innerHTML = selectOptions(
-    classes,
-    'id',
-    'class_name',
-    'Select Class'
-  );
+  const offering = matching[0];
+  const { data, error } = await supabase.from('sections').select('id,section_name,offering_id,session_id').eq('offering_id', offering.id).eq('session_id', sessionId).order('section_name');
+  if (error) throw error;
+  admissionData.sections = data || [];
+  fillSelect('adSection', admissionData.sections, x => x.id, x => x.section_name, 'Select section');
 }
-
-async function loadMediums() {
-  const classId = $('classSelect').value;
-
-  $('mediumSelect').innerHTML =
-    '<option value="">Loading mediums...</option>';
-
-  $('sectionSelect').innerHTML =
-    '<option value="">Select Medium first</option>';
-
-  $('streamLabel').classList.add('hidden');
-
-  if (!classId) return;
-
-  const { data: offerings, error } = await supabase
-    .from('class_offerings')
-    .select('medium_id')
-    .eq('class_id', classId);
-
-  if (error) {
-    toast(error.message);
-    return;
-  }
-
-  const mediumIds = [...new Set(
-    (offerings || []).map(x => x.medium_id)
-  )];
-
-  const { data: mediums, error: mediumError } = await supabase
-    .from('mediums')
-    .select('id,medium_name')
-    .in('id', mediumIds)
-    .order('medium_name');
-
-  if (mediumError) {
-    toast(mediumError.message);
-    return;
-  }
-
-  $('mediumSelect').innerHTML = selectOptions(
-    mediums,
-    'id',
-    'medium_name',
-    'Select Medium'
-  );
-}
-
-async function loadStreamsAndSections() {
-  const classId = $('classSelect').value;
-  const mediumId = $('mediumSelect').value;
-
-  $('streamLabel').classList.add('hidden');
-
-  $('sectionSelect').innerHTML =
-    '<option value="">Loading sections...</option>';
-
-  $('streamSelect').innerHTML =
-    '<option value="">Select Stream</option>';
-
-  if (!classId || !mediumId) return;
-
-  const { data: offerings, error } = await supabase
-    .from('class_offerings')
-    .select('id,stream_id')
-    .eq('class_id', classId)
-    .eq('medium_id', mediumId);
-
-  if (error) {
-    toast(error.message);
-    return;
-  }
-
-  if (!offerings?.length) {
-    $('sectionSelect').innerHTML =
-      '<option value="">Offering not found</option>';
-    return;
-  }
-
-  const streamIds = [...new Set(
-    offerings
-      .map(x => x.stream_id)
-      .filter(Boolean)
-  )];
-
-  if (streamIds.length) {
-    const { data: streams, error: streamError } = await supabase
-      .from('streams')
-      .select('id,stream_name')
-      .in('id', streamIds);
-
-    if (streamError) {
-      toast(streamError.message);
-      return;
-    }
-
-    $('streamLabel').classList.remove('hidden');
-
-    $('streamSelect').innerHTML = selectOptions(
-      streams,
-      'id',
-      'stream_name',
-      'Select Stream'
-    );
-  }
-
-  await loadSections();
-}
-
-async function loadSections() {
-  const sessionId = $('sessionSelect').value;
-  const classId = $('classSelect').value;
-  const mediumId = $('mediumSelect').value;
-  const streamId = $('streamSelect').value;
-
-  $('sectionSelect').innerHTML =
-    '<option value="">Loading sections...</option>';
-
-  if (!sessionId || !classId || !mediumId) return;
-
-  let offeringQuery = supabase
-    .from('class_offerings')
-    .select('id')
-    .eq('class_id', classId)
-    .eq('medium_id', mediumId);
-
-  if (streamId) {
-    offeringQuery = offeringQuery.eq('stream_id', streamId);
-  }
-
-  const { data: offerings, error: offeringError } =
-    await offeringQuery;
-
-  if (offeringError) {
-    toast(offeringError.message);
-    return;
-  }
-
-  const offeringIds = (offerings || []).map(x => x.id);
-
-  if (!offeringIds.length) {
-    $('sectionSelect').innerHTML =
-      '<option value="">No offering found</option>';
-    return;
-  }
-
-  const { data: sections, error } = await supabase
-    .from('sections')
-    .select('id,section_name,offering_id,session_id')
-    .eq('session_id', sessionId)
-    .in('offering_id', offeringIds)
-    .order('section_name');
-
-  if (error) {
-    toast('Sections load नहीं हुए: ' + error.message);
-    return;
-  }
-
-  $('sectionSelect').innerHTML = selectOptions(
-    sections,
-    'id',
-    'section_name',
-    'Select Section'
-  );
-}
-
-/* ==========================================
-   SAVE ADMISSION
-========================================== */
-
 async function saveAdmission(e) {
   e.preventDefault();
-
   const form = e.currentTarget;
   const fd = new FormData(form);
-
   const msg = $('admissionMsg');
   const btn = form.querySelector('button[type="submit"]');
-
-  const payload = {
-    p_admission_number:
-      String(fd.get('admission_number') || '').trim(),
-
-    p_full_name:
-      String(fd.get('full_name') || '').trim(),
-
-    p_date_of_birth:
-      fd.get('date_of_birth') || null,
-
-    p_gender:
-      fd.get('gender') || null,
-
-    p_admission_date:
-      fd.get('admission_date') || null,
-
-    p_student_phone:
-      String(fd.get('student_phone') || '').trim() || null,
-
-    p_address:
-      String(fd.get('address') || '').trim() || null,
-
-    p_session_id:
-      Number(fd.get('session_id')),
-
-    p_section_id:
-      Number(fd.get('section_id')),
-
-    p_roll_number:
-      String(fd.get('roll_number') || '').trim() || null,
-
-    p_father_name:
-      String(fd.get('father_name') || '').trim(),
-
-    p_father_mobile:
-      String(fd.get('father_mobile') || '').trim() || null,
-
-    p_mother_name:
-      String(fd.get('mother_name') || '').trim(),
-
-    p_mother_mobile:
-      String(fd.get('mother_mobile') || '').trim() || null
-  };
-
   btn.disabled = true;
-  btn.textContent = 'Saving Admission…';
-
+  btn.textContent = 'Saving admission…';
   msg.textContent = '';
 
-  try {
-    const { data, error } = await supabase.rpc(
-      'save_student_admission',
-      payload
-    );
+  const payload = {
+    p_admission_number: String(fd.get('admission_number') || '').trim(),
+    p_full_name: String(fd.get('full_name') || '').trim(),
+    p_date_of_birth: fd.get('date_of_birth') || null,
+    p_gender: fd.get('gender') || null,
+    p_admission_date: fd.get('admission_date') || null,
+    p_student_phone: String(fd.get('student_phone') || '').trim() || null,
+    p_address: String(fd.get('address') || '').trim() || null,
+    p_session_id: Number(fd.get('session_id')),
+    p_section_id: Number(fd.get('section_id')),
+    p_roll_number: String(fd.get('roll_number') || '').trim() || null,
+    p_father_name: String(fd.get('father_name') || '').trim(),
+    p_father_mobile: String(fd.get('father_mobile') || '').trim() || null,
+    p_mother_name: String(fd.get('mother_name') || '').trim(),
+    p_mother_mobile: String(fd.get('mother_mobile') || '').trim() || null
+  };
 
+  try {
+    if (!payload.p_session_id || !payload.p_section_id) {
+      throw new Error('Academic Session और Section चुनना जरूरी है।');
+    }
+
+    const { data, error } = await supabase.rpc('save_student_admission', payload);
     if (error) throw error;
 
-    msg.textContent =
-      'Admission successfully saved! Student ID: ' + data;
+    const studentId = data;
+    const pen = String(fd.get('pen_number') || '').trim();
 
+    if (pen) {
+      const { error: penError } = await supabase
+        .from('students')
+        .update({ pen_number: pen })
+        .eq('id', studentId);
+
+      if (penError) {
+        throw new Error('Admission सेव हो गया, लेकिन PEN सेव नहीं हुआ: ' + penError.message);
+      }
+    }
+
+    const documentMap = [
+      ['student_photo', 'student_photo'],
+      ['student_aadhaar_doc', 'student_aadhaar'],
+      ['father_aadhaar_doc', 'father_aadhaar'],
+      ['mother_aadhaar_doc', 'mother_aadhaar'],
+      ['birth_certificate', 'birth_certificate'],
+      ['tc_document', 'transfer_certificate'],
+      ['previous_marksheet', 'previous_marksheet']
+    ];
+
+    const filesToUpload = documentMap
+      .map(([field, type]) => ({ file: fd.get(field), type }))
+      .filter(x => x.file && x.file.size);
+
+    for (const item of filesToUpload) {
+      if (item.file.size > 10 * 1024 * 1024) {
+        throw new Error(`${item.file.name}: file 10 MB से बड़ी है।`);
+      }
+
+      const ext = (item.file.name.split('.').pop() || 'file')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+
+      const path = `${studentId}/${item.type}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('student-documents')
+        .upload(path, item.file, {
+          contentType: item.file.type,
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw new Error('Admission सेव हुआ, लेकिन दस्तावेज़ अपलोड नहीं हुआ: ' + uploadError.message);
+      }
+
+      const { error: recordError } = await supabase
+        .from('student_documents')
+        .insert({
+          student_id: studentId,
+          document_type: item.type,
+          file_name: item.file.name,
+          storage_path: path,
+          uploaded_by: currentUser?.id
+        });
+
+      if (recordError) {
+        throw new Error('File अपलोड हुई, लेकिन document record सेव नहीं हुआ: ' + recordError.message);
+      }
+    }
+
+    msg.textContent = `Admission सफल! Student ID: ${studentId}${filesToUpload.length ? ` | ${filesToUpload.length} documents uploaded` : ''}`;
     toast('Admission successfully saved');
-
-    setTimeout(() => {
-      renderStudents();
-    }, 1500);
+    setTimeout(() => renderStudents(), 1800);
 
   } catch (err) {
-    console.error('Admission error:', err);
-
-    msg.textContent =
-      'Save failed: ' + (err.message || 'Unknown error');
-
+    msg.textContent = 'Admission save नहीं हुआ: ' + (err.message || 'Unknown error');
     btn.disabled = false;
     btn.textContent = 'Save Admission';
   }
 }
-
-/* ==========================================
-   PARENT DASHBOARD
-========================================== */
 
 async function renderParent(page) {
   if (page !== 'overview' && page !== 'students') {
@@ -1092,108 +387,34 @@ async function renderParent(page) {
     return;
   }
 
-  const { data: students, error } = await supabase
-    .from('students')
+  const { data: students, error } = await supabase.from('students')
     .select('id,admission_number,full_name,status')
     .order('full_name');
 
   if (error) {
-    $('pageContent').innerHTML = empty(
-      'Student list could not load',
-      error.message
-    );
+    $('pageContent').innerHTML = empty('Student list could not load', error.message);
     return;
   }
 
-  const { data: enrollments, error: enErr } = await supabase
-    .from('enrollments')
+  const { data: enrollments, error: enErr } = await supabase.from('enrollments')
     .select('student_id,roll_number,section_id,session_id,status');
 
-  const byStudent = new Map(
-    (enrollments || []).map(x => [x.student_id, x])
-  );
+  const byStudent = new Map((enrollments || []).map(x => [x.student_id, x]));
 
   const rows = (students || []).map(s => {
     const en = byStudent.get(s.id);
-
-    return `
-      <tr>
-        <td>
-          <div class="student-row">
-            <div class="student-photo">
-              ${safe((s.full_name || '?').charAt(0))}
-            </div>
-
-            <div>
-              <b>${safe(s.full_name)}</b>
-              <br>
-              <small>
-                ${safe(s.admission_number || 'Admission no. pending')}
-              </small>
-            </div>
-          </div>
-        </td>
-
-        <td>${safe(en?.roll_number || '—')}</td>
-
-        <td>${safe(en?.status || s.status || '—')}</td>
-      </tr>
-    `;
+    return `<tr><td><div class="student-row"><div class="student-photo">${safe((s.full_name || '?').charAt(0))}</div><div><b>${safe(s.full_name)}</b><br><small>${safe(s.admission_number || 'Admission no. pending')}</small></div></div></td><td>${safe(en?.roll_number || '—')}</td><td>${safe(en?.status || s.status || '—')}</td></tr>`;
   }).join('');
 
-  $('pageContent').innerHTML = `
-    <div class="stats">
-      ${stat('My Children', students?.length ?? 0, '♙', 'Linked student profiles')}
-      ${stat('Attendance', '—', '◷', 'Attendance module pending')}
-      ${stat('Fees', '—', '₹', 'Fee module pending')}
-      ${stat('Results', '—', '▤', 'Exam module pending')}
-    </div>
+  $('pageContent').innerHTML = `<div class="stats">${stat('My Children', students?.length ?? 0, '♙', 'Linked student profiles')}${stat('Attendance', '—', '◷', 'Attendance module pending')}${stat('Fees', '—', '₹', 'Fee module pending')}${stat('Results', '—', '▤', 'Exam module pending')}</div><div class="panel"><h3>My Children</h3>${students?.length ? `<div class="table-wrap"><table><thead><tr><th>Student</th><th>Roll Number</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('No linked children found', 'School office has not linked a student to this family account yet.')}</div>`;
 
-    <div class="panel">
-      <h3>My Children</h3>
-
-      ${
-        students?.length
-          ? `
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Roll Number</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
-          `
-          : empty(
-              'No linked children found',
-              'School office has not linked a student to this family account yet.'
-            )
-      }
-    </div>
-  `;
-
-  if (enErr) {
-    toast('Enrollment detail could not be loaded: ' + enErr.message);
-  }
+  if (enErr) toast('Enrollment detail could not be loaded: ' + enErr.message);
 }
 
-/* ==========================================
-   LOGOUT & INITIALIZATION
-========================================== */
-
 async function logout() {
-  if (supabase) {
-    await supabase.auth.signOut();
-  }
-
+  if (supabase) await supabase.auth.signOut();
   currentUser = null;
   currentProfile = null;
-
   showLogin('आप लॉगआउट हो गए हैं।');
 }
 
@@ -1202,7 +423,6 @@ function closeMobileMenu() {
 }
 
 async function init() {
-  // Session restore के समय flicker रोकना
   $('loginView')?.classList.add('hidden');
   $('dashboardView')?.classList.add('hidden');
   $('previewPage')?.classList.add('hidden');
@@ -1213,71 +433,39 @@ async function init() {
 
   $('togglePassword')?.addEventListener('click', () => {
     const p = $('password');
-
-    p.type = p.type === 'password'
-      ? 'text'
-      : 'password';
-
-    $('togglePassword').textContent =
-      p.type === 'password'
-        ? 'Show'
-        : 'Hide';
+    p.type = p.type === 'password' ? 'text' : 'password';
+    $('togglePassword').textContent = p.type === 'password' ? 'Show' : 'Hide';
   });
 
   $('logoutBtn')?.addEventListener('click', logout);
+  $('refreshBtn')?.addEventListener('click', () => renderPage(currentPage));
 
-  $('refreshBtn')?.addEventListener('click', () => {
-    renderPage(currentPage);
-  });
-
-  // Hamburger
   $('menuBtn')?.addEventListener('click', () => {
-    if (
-      !currentUser ||
-      $('dashboardView')?.classList.contains('hidden')
-    ) {
-      return;
-    }
-
+    if (!currentUser || $('dashboardView')?.classList.contains('hidden')) return;
     $('sidebar')?.classList.toggle('open');
   });
 
-  // Navigation
   $('navList')?.addEventListener('click', e => {
     const b = e.target.closest('[data-page]');
-
     if (!b || b.classList.contains('hidden')) return;
-
     closeMobileMenu();
-
     renderPage(b.dataset.page);
   });
 
   if (!configured) {
     authReady = true;
-
-    showLogin(
-      'Preview mode: Supabase configuration अभी उपलब्ध नहीं है.'
-    );
-
+    showLogin('Preview mode: Supabase configuration अभी उपलब्ध नहीं है.');
     return;
   }
 
   try {
-    const {
-      data: { session },
-      error
-    } = await supabase.auth.getSession();
-
+    const { data: { session }, error } = await supabase.auth.getSession();
     if (error) throw error;
 
     if (session) {
       currentUser = session.user;
-
       currentProfile = await loadProfile(session.user);
-
       await enterApp();
-
     } else {
       showLogin();
     }
@@ -1285,35 +473,22 @@ async function init() {
   } catch (err) {
     currentUser = null;
     currentProfile = null;
-
-    showLogin(
-      err.message ||
-      'Session restore नहीं हो सका। कृपया फिर से login करें.'
-    );
-
+    showLogin(err.message || 'Session restore नहीं हो सका। कृपया फिर से login करें.');
   } finally {
     authReady = true;
   }
 
-  supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.onAuthStateChange((event) => {
     if (!authReady || authEventBusy) return;
-
     if (event === 'SIGNED_OUT') {
       currentUser = null;
       currentProfile = null;
-
       showLogin();
     }
-
-    // INITIAL_SESSION / TOKEN_REFRESHED पर
-    // dashboard को दोबारा render नहीं करते।
   });
 }
 
 init().catch(err => {
   console.error('SNRD Portal initialization error:', err);
-
-  showLogin(
-    'Portal start नहीं हो सका। कृपया page reload करें.'
-  );
+  showLogin('Portal start नहीं हो सका। कृपया page reload करें.');
 });
