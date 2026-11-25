@@ -92,7 +92,7 @@ async function init(){
   $('togglePassword').addEventListener('click',()=>{const p=$('password');p.type=p.type==='password'?'text':'password';$('togglePassword').textContent=p.type==='password'?'Show':'Hide'});
   $('logoutBtn').addEventListener('click',logout);
   $('refreshBtn').addEventListener('click',()=>renderPage(currentPage));
-  $('menuBtn').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
+  $('menuBtn').addEventListener('click',openPreviewMenu);
   $('navList').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(b){renderPage(b.dataset.page);$('sidebar').classList.remove('open')}});
   if(!configured){showLogin('Preview mode: Supabase credentials अभी configure नहीं हैं।');return;}
   const {data:{session}}=await supabase.auth.getSession();
