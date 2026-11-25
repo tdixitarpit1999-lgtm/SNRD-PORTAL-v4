@@ -1,0 +1,31 @@
+name: Extract SNRD Portal package
+on:
+  push:
+    branches: [main]
+    paths:
+      - "SNRD_PORTAL_V4_FRESH_COMPLETE_PACKAGE.zip"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract package into repository root
+        run: |
+          mkdir -p /tmp/snrd-package
+          unzip -q SNRD_PORTAL_V4_FRESH_COMPLETE_PACKAGE.zip -d /tmp/snrd-package
+          cp -a /tmp/snrd-package/SNRD_PORTAL_V4_CLEAN/. .
+          rm -f SNRD_PORTAL_V4_FRESH_COMPLETE_PACKAGE.zip
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Extract SNRD Portal V4 package"
+            git push
+          fi
