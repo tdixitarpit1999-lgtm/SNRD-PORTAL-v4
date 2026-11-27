@@ -234,14 +234,112 @@ async function showStudentProfile(studentId) {
     const { data: student, error } = await supabase.from('students').select('*').eq('id', studentId).maybeSingle();
     if (error) throw error;
     if (!student) throw new Error('Student record नहीं मिला।');
-    const { data: enrollments, error: enrollmentError } = await supabase.from('enrollments').select('*').eq('student_id', studentId).order('enrollment_date', { ascending: false });
+
+    const { data: enrollments, error: enrollmentError } = await supabase.from('enrollments')
+      .select('id,student_id,session_id,section_id,roll_number,enrollment_date,status')
+      .eq('student_id', studentId).order('enrollment_date', { ascending: false });
     if (enrollmentError) console.warn('Enrollment profile load:', enrollmentError.message);
-    const { data: docs, error: docsError } = await supabase.from('student_documents').select('id,document_type,file_name,uploaded_at').eq('student_id', studentId).order('uploaded_at', { ascending: false });
+
+    const { data: docs, error: docsError } = await supabase.from('student_documents')
+      .select('id,document_type,file_name,storage_path,uploaded_at')
+      .eq('student_id', studentId).order('uploaded_at', { ascending: false });
     if (docsError) console.warn('Document profile load:', docsError.message);
-    const field = (label, value) => `<div style="padding:10px;border:1px solid #e3e9f2;border-radius:10px"><small class="muted">${safe(label)}</small><div><b>${safe(value || '—')}</b></div></div>`;
-    const enrollmentHtml = (enrollments || []).length ? (enrollments || []).map(en => `<li>Roll: ${safe(en.roll_number || '—')} · Section ID: ${safe(en.section_id || '—')} · Session ID: ${safe(en.session_id || '—')} · Status: ${safe(en.status || '—')}</li>`).join('') : '<li>Enrollment detail उपलब्ध नहीं है।</li>';
-    const docHtml = (docs || []).length ? (docs || []).map(d => `<li>${safe(String(d.document_type || '').replaceAll('_',' '))} — ${safe(d.file_name || '')}</li>`).join('') : '<li>अभी कोई document नहीं।</li>';
-    panel.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Student Profile</h3><button type="button" class="outline-btn" id="closeStudentProfile">Close</button></div><h4>${safe(student.full_name || 'Student')}</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0">${field('Admission Number',student.admission_number)}${field('PEN',student.pen_number)}${field('Date of Birth',student.date_of_birth)}${field('Gender',student.gender)}${field('Admission Date',student.admission_date)}${field('Student Mobile',student.student_phone)}${field('Status',student.status)}${field('Address',student.address)}</div><h4>Enrollment</h4><ul>${enrollmentHtml}</ul><h4>Documents (${(docs||[]).length})</h4><ul>${docHtml}</ul><p class="muted">यह Profile view अभी read-only है। Edit सुविधा अगले चरण में जोड़ी जाएगी।</p>`;
+
+    // Resolve private student photo with a fresh signed URL (link lasts 1 hour, file remains stored).
+    const photoDoc = (docs || []).find(d => d.document_type === 'student_photo');
+    let photoUrl = '';
+    if (photoDoc?.storage_path) {
+      const { data: signedPhoto, error: photoError } = await supabase.storage
+        .from('student-documents').createSignedUrl(photoDoc.storage_path, 3600);
+      if (!photoError && signedPhoto?.signedUrl) photoUrl = signedPhoto.signedUrl;
+    }
+
+    // Get guardian links first, then fetch guardian rows; avoid depending on implicit join names.
+    let guardianRows = [];
+    const { data: links, error: linkError } = await supabase.from('student_guardians')
+      .select('*').eq('student_id', studentId);
+    if (!linkError && links?.length) {
+      const guardianIds = links.map(x => x.guardian_id).filter(Boolean);
+      if (guardianIds.length) {
+        const { data: fetchedGuardians, error: guardianError } = await supabase.from('guardians')
+          .select('*').in('id', guardianIds);
+        if (!guardianError) guardianRows = fetchedGuardians || [];
+        else console.warn('Guardian profile load:', guardianError.message);
+      }
+    } else if (linkError) console.warn('Student guardian links unavailable:', linkError.message);
+
+    // Label lookups for human-readable enrollment information.
+    const sectionIds = [...new Set((enrollments || []).map(x => x.section_id).filter(Boolean))];
+    const sessionIds = [...new Set((enrollments || []).map(x => x.session_id).filter(Boolean))];
+    let sectionMap = new Map(), sessionMap = new Map();
+    if (sectionIds.length) {
+      const { data: sections, error: sectionError } = await supabase.from('sections')
+        .select('id,section_name,offering_id,session_id').in('id', sectionIds);
+      if (!sectionError && sections) {
+        sectionMap = new Map(sections.map(x => [String(x.id), x]));
+        const offeringIds = [...new Set(sections.map(x => x.offering_id).filter(Boolean))];
+        if (offeringIds.length) {
+          const { data: offerings, error: offeringError } = await supabase.from('class_offerings')
+            .select('id,class_id,medium_id,stream_id').in('id', offeringIds);
+          if (!offeringError && offerings?.length) {
+            const classIds = [...new Set(offerings.map(x => x.class_id).filter(Boolean))];
+            const mediumIds = [...new Set(offerings.map(x => x.medium_id).filter(Boolean))];
+            const streamIds = [...new Set(offerings.map(x => x.stream_id).filter(Boolean))];
+            const [classRes, mediumRes, streamRes] = await Promise.all([
+              classIds.length ? supabase.from('classes').select('id,class_name').in('id', classIds) : Promise.resolve({data:[],error:null}),
+              mediumIds.length ? supabase.from('mediums').select('id,medium_name').in('id', mediumIds) : Promise.resolve({data:[],error:null}),
+              streamIds.length ? supabase.from('streams').select('id,stream_name').in('id', streamIds) : Promise.resolve({data:[],error:null})
+            ]);
+            const classMap = new Map((classRes.data || []).map(x => [String(x.id), x.class_name]));
+            const mediumMap = new Map((mediumRes.data || []).map(x => [String(x.id), x.medium_name]));
+            const streamMap = new Map((streamRes.data || []).map(x => [String(x.id), x.stream_name]));
+            const offerMap = new Map(offerings.map(x => [String(x.id), x]));
+            sections.forEach(sec => {
+              const o = offerMap.get(String(sec.offering_id));
+              const academicLabel = o ? [classMap.get(String(o.class_id)), mediumMap.get(String(o.medium_id)), streamMap.get(String(o.stream_id))].filter(Boolean).join(' · ') : '';
+              sec.display_label = [academicLabel, sec.section_name].filter(Boolean).join(' · ');
+            });
+          }
+        }
+      } else if (sectionError) console.warn('Section label lookup:', sectionError.message);
+    }
+    if (sessionIds.length) {
+      const { data: sessions, error: sessionError } = await supabase.from('academic_sessions')
+        .select('id,session_name').in('id', sessionIds);
+      if (!sessionError && sessions) sessionMap = new Map(sessions.map(x => [String(x.id), x.session_name]));
+      else if (sessionError) console.warn('Session label lookup:', sessionError.message);
+    }
+
+    const field = (label, value) => `<div style="padding:12px;border:1px solid #e3e9f2;border-radius:12px;background:var(--panel-bg,#fff)"><small class="muted">${safe(label)}</small><div style="font-size:1.02em;overflow-wrap:anywhere"><b>${safe(value || '—')}</b></div></div>`;
+    const guardianName = g => g.full_name || g.guardian_name || g.name || g.name_of_guardian || g.parent_name || '—';
+    const guardianPhone = g => g.mobile || g.phone || g.phone_number || g.mobile_number || g.contact_number || '—';
+    const guardianType = (link, g) => link.relationship || link.relation || link.guardian_type || g.relationship || g.relation || g.guardian_type || '';
+    const guardianHtml = guardianRows.length ? guardianRows.map(g => {
+      const link = (links || []).find(x => String(x.guardian_id) === String(g.id)) || {};
+      const type = guardianType(link, g);
+      return `<div style="padding:12px;border:1px solid #e3e9f2;border-radius:12px;margin:8px 0"><b>${safe(type || 'Guardian')}</b><div>${safe(guardianName(g))}</div><div class="muted">Mobile: ${safe(guardianPhone(g))}</div></div>`;
+    }).join('') : '<p class="muted">Parent/Guardian details अभी load नहीं हो सके या उपलब्ध नहीं हैं।</p>';
+
+    const enrollmentHtml = (enrollments || []).length ? (enrollments || []).map(en => {
+      const sec = sectionMap.get(String(en.section_id));
+      const sectionLabel = sec?.display_label || sec?.section_name || 'Section information unavailable';
+      const sessionLabel = sessionMap.get(String(en.session_id)) || 'Session information unavailable';
+      return `<div style="padding:12px;border:1px solid #e3e9f2;border-radius:12px;margin:8px 0"><div><b>${safe(sectionLabel)}</b></div><div>Academic Session: ${safe(sessionLabel)}</div><div>Roll Number: ${safe(en.roll_number || '—')}</div><div>Status: ${safe(en.status || '—')}</div></div>`;
+    }).join('') : '<p>Enrollment detail उपलब्ध नहीं है।</p>';
+
+    const documentHtml = (docs || []).length ? await Promise.all((docs || []).map(async d => {
+      let action = '<span class="muted">Secure link नहीं बन सका</span>';
+      if (d.storage_path) {
+        const { data: signed, error: signError } = await supabase.storage.from('student-documents').createSignedUrl(d.storage_path, 3600);
+        if (!signError && signed?.signedUrl) action = `<a href="${safe(signed.signedUrl)}" target="_blank" rel="noopener">View / Download</a>`;
+      }
+      return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;padding:10px;border-bottom:1px solid #e3e9f2"><div><b>${safe(String(d.document_type || '').replaceAll('_',' '))}</b><br><small>${safe(d.file_name || '')}</small></div>${action}</div>`;
+    })).then(x => x.join('')) : '<p class="muted">अभी कोई document नहीं।</p>';
+
+    panel.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Student Profile</h3><button type="button" class="outline-btn" id="closeStudentProfile">Close</button></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0">${photoUrl ? `<img src="${safe(photoUrl)}" alt="Student photo" style="width:112px;height:112px;border-radius:14px;object-fit:cover;border:1px solid #dce5f0">` : `<div style="width:112px;height:112px;border-radius:14px;background:#e8effb;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:bold;color:#174a8b">${safe((student.full_name || '?').trim().charAt(0).toUpperCase())}</div>`}<div><h4 style="margin:0 0 6px">${safe(student.full_name || 'Student')}</h4><div class="muted">Admission No: ${safe(student.admission_number || '—')}</div><div class="muted">${safe(student.status || '—')}</div></div></div>
+      <h4>Student Information</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0">${field('Admission Number',student.admission_number)}${field('PEN',student.pen_number)}${field('Date of Birth',student.date_of_birth)}${field('Gender',student.gender)}${field('Admission Date',student.admission_date)}${field('Student Mobile',student.student_phone)}${field('Status',student.status)}${field('Address',student.address)}</div>
+      <h4>Parent / Guardian Information</h4><div>${guardianHtml}</div><h4>Academic Information</h4><div>${enrollmentHtml}</div><h4>Documents (${(docs||[]).length})</h4><div>${documentHtml}</div><p class="muted">Profile अभी read-only है। Edit Student अगले update में जोड़ा जाएगा। Secure document links 1 घंटे में expire होते हैं; original files storage में रहती हैं।</p>`;
     $('closeStudentProfile')?.addEventListener('click', () => panel.classList.add('hidden'));
     panel.scrollIntoView({behavior:'smooth',block:'start'});
   } catch (err) {
