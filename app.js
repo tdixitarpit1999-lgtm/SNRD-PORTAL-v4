@@ -336,16 +336,89 @@ async function showStudentProfile(studentId) {
       return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;padding:10px;border-bottom:1px solid #e3e9f2"><div><b>${safe(String(d.document_type || '').replaceAll('_',' '))}</b><br><small>${safe(d.file_name || '')}</small></div>${action}</div>`;
     })).then(x => x.join('')) : '<p class="muted">अभी कोई document नहीं।</p>';
 
-    panel.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Student Profile</h3><button type="button" class="outline-btn" id="closeStudentProfile">Close</button></div>
+    panel.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Student Profile</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${['super_admin','office_admin'].includes(currentProfile?.role) ? '<button type="button" class="primary-btn" id="editStudentBtn">✏️ Edit Student</button>' : ''}<button type="button" class="outline-btn" id="closeStudentProfile">Close</button></div></div>
       <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0">${photoUrl ? `<img src="${safe(photoUrl)}" alt="Student photo" style="width:112px;height:112px;border-radius:14px;object-fit:cover;border:1px solid #dce5f0">` : `<div style="width:112px;height:112px;border-radius:14px;background:#e8effb;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:bold;color:#174a8b">${safe((student.full_name || '?').trim().charAt(0).toUpperCase())}</div>`}<div><h4 style="margin:0 0 6px">${safe(student.full_name || 'Student')}</h4><div class="muted">Admission No: ${safe(student.admission_number || '—')}</div><div class="muted">${safe(student.status || '—')}</div></div></div>
       <h4>Student Information</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0">${field('Admission Number',student.admission_number)}${field('PEN',student.pen_number)}${field('Date of Birth',student.date_of_birth)}${field('Gender',student.gender)}${field('Admission Date',student.admission_date)}${field('Student Mobile',student.student_phone)}${field('Status',student.status)}${field('Address',student.address)}</div>
       <h4>Parent / Guardian Information</h4><div>${guardianHtml}</div><h4>Academic Information</h4><div>${enrollmentHtml}</div><h4>Documents (${(docs||[]).length})</h4><div>${documentHtml}</div><p class="muted">Profile अभी read-only है। Edit Student अगले update में जोड़ा जाएगा। Secure document links 1 घंटे में expire होते हैं; original files storage में रहती हैं।</p>`;
     $('closeStudentProfile')?.addEventListener('click', () => panel.classList.add('hidden'));
+    $('editStudentBtn')?.addEventListener('click', () => showStudentEditForm(student, (enrollments || [])[0] || null));
     panel.scrollIntoView({behavior:'smooth',block:'start'});
   } catch (err) {
     panel.innerHTML = `<h3>Student Profile</h3><p>${safe(err.message || err)}</p><button type="button" class="outline-btn" id="closeStudentProfile">Close</button>`;
     $('closeStudentProfile')?.addEventListener('click', () => panel.classList.add('hidden'));
   }
+}
+
+async function showStudentEditForm(student, enrollment) {
+  window.__snrdEditingStudentId = student.id; window.__snrdEditingEnrollmentId = enrollment?.id || null;
+  const panel = $('studentProfilePanel');
+  if (!panel) return;
+  panel.innerHTML = `<h3>Edit Student</h3><p class="muted">Admission Number सुरक्षित पहचान के लिए editable नहीं है। Parent/Guardian details को अगला update में schema verify करके edit करेंगे।</p><form id="editStudentForm"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+    <label>Student Name<input name="full_name" required value="${safe(student.full_name || '')}"></label>
+    <label>PEN<input name="pen_number" value="${safe(student.pen_number || '')}" maxlength="30"></label>
+    <label>Date of Birth<input name="date_of_birth" type="date" value="${safe(student.date_of_birth || '')}"></label>
+    <label>Gender<select name="gender"><option value="">Select</option><option ${student.gender==='Male'?'selected':''}>Male</option><option ${student.gender==='Female'?'selected':''}>Female</option><option ${student.gender==='Other'?'selected':''}>Other</option></select></label>
+    <label>Admission Date<input name="admission_date" type="date" value="${safe(student.admission_date || '')}"></label>
+    <label>Student Mobile<input name="student_phone" type="tel" value="${safe(student.student_phone || '')}"></label>
+    <label>Status<select name="status"><option value="active" ${student.status==='active'?'selected':''}>Active</option><option value="inactive" ${student.status==='inactive'?'selected':''}>Inactive</option></select></label>
+    <label>New Student Photo (optional)<input name="student_photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+  </div><label>Address<textarea name="address" rows="3">${safe(student.address || '')}</textarea></label>
+  <h4>Academic Placement</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+    <label>Session<select name="session_id" id="editSession" required></select></label><label>Class<select name="class_id" id="editClass" required></select></label><label>Medium<select name="medium_id" id="editMedium" required></select></label><label>Stream<select name="stream_id" id="editStream"></select></label><label>Section<select name="section_id" id="editSection" required></select></label><label>Roll Number<input name="roll_number" value="${safe(enrollment?.roll_number || '')}"></label>
+  </div><p id="editStudentMsg" role="status"></p><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><button type="submit" class="primary-btn">Save Changes</button><button type="button" class="outline-btn" id="cancelStudentEdit">Cancel</button></div></form>`;
+  $('cancelStudentEdit')?.addEventListener('click', () => showStudentProfile(student.id));
+  $('editStudentForm')?.addEventListener('submit', saveStudentEdit);
+  try {
+    const [sess, cls, med, str, off] = await Promise.all([
+      supabase.from('academic_sessions').select('id,session_name,start_date,end_date').order('start_date',{ascending:false}),
+      supabase.from('classes').select('id,class_name,sort_order').order('sort_order'),
+      supabase.from('mediums').select('id,medium_name').order('medium_name'),
+      supabase.from('streams').select('id,stream_name').order('stream_name'),
+      supabase.from('class_offerings').select('id,class_id,medium_id,stream_id')
+    ]);
+    for (const r of [sess,cls,med,str,off]) if (r.error) throw r.error;
+    editPlacement = {sessions:sess.data||[],classes:cls.data||[],mediums:med.data||[],streams:str.data||[],offerings:off.data||[],sections:[]};
+    fillSelect('editSession',editPlacement.sessions,x=>x.id,x=>x.session_name,'Select session');
+    fillSelect('editClass',editPlacement.classes,x=>x.id,x=>x.class_name,'Select class');
+    fillSelect('editMedium',editPlacement.mediums,x=>x.id,x=>x.medium_name,'Select medium');
+    fillSelect('editStream',editPlacement.streams,x=>x.id,x=>x.stream_name,'Not applicable');
+    if (enrollment) { $('editSession').value=String(enrollment.session_id||''); $('editClass').value=''; $('editMedium').value=''; $('editStream').value=''; }
+    $('editClass').addEventListener('change', refreshEditSections); $('editMedium').addEventListener('change', refreshEditSections); $('editStream').addEventListener('change', refreshEditSections); $('editSession').addEventListener('change', refreshEditSections);
+    await refreshEditSections();
+    if (enrollment?.section_id) {
+      const secRes=await supabase.from('sections').select('id,section_name,offering_id,session_id').eq('id',enrollment.section_id).maybeSingle();
+      if (secRes.data) { const offer=editPlacement.offerings.find(o=>String(o.id)===String(secRes.data.offering_id)); if(offer){$('editClass').value=String(offer.class_id);$('editMedium').value=String(offer.medium_id);$('editStream').value=String(offer.stream_id||''); await refreshEditSections(); $('editSection').value=String(enrollment.section_id); } }
+    }
+  } catch(err) { $('editStudentMsg').textContent='Dropdown load error: '+err.message; }
+}
+
+let editPlacement = {sessions:[],classes:[],mediums:[],streams:[],offerings:[],sections:[]};
+async function refreshEditSections() {
+  const classId=$('editClass')?.value, mediumId=$('editMedium')?.value, sessionId=$('editSession')?.value, streamId=$('editStream')?.value||null;
+  if(!classId||!mediumId||!sessionId){fillSelect('editSection',[],x=>x.id,x=>x.section_name,'Class/medium/session चुनें');return;}
+  const offers=editPlacement.offerings.filter(o=>String(o.class_id)===String(classId)&&String(o.medium_id)===String(mediumId));
+  const hasStreams=offers.some(o=>o.stream_id!=null); $('editStream').disabled=!hasStreams; if(!hasStreams) $('editStream').value='';
+  const matching=offers.filter(o=>hasStreams?String(o.stream_id||'')===String(streamId||''):o.stream_id==null);
+  if(!matching.length){fillSelect('editSection',[],x=>x.id,x=>x.section_name,'Offering नहीं मिली');return;}
+  const {data,error}=await supabase.from('sections').select('id,section_name,offering_id,session_id').eq('offering_id',matching[0].id).eq('session_id',sessionId).order('section_name');
+  if(error) throw error; editPlacement.sections=data||[]; fillSelect('editSection',editPlacement.sections,x=>x.id,x=>x.section_name,'Select section');
+}
+
+async function saveStudentEdit(e) {
+  e.preventDefault(); const form=e.currentTarget, fd=new FormData(form), msg=$('editStudentMsg'), btn=form.querySelector('button[type="submit"]');
+  btn.disabled=true; btn.textContent='Saving…'; msg.textContent='';
+  const studentId=window.__snrdEditingStudentId; if(!studentId){msg.textContent='Student ID missing';btn.disabled=false;return;}
+  try {
+    const update={full_name:String(fd.get('full_name')||'').trim(),pen_number:String(fd.get('pen_number')||'').trim()||null,date_of_birth:fd.get('date_of_birth')||null,gender:fd.get('gender')||null,admission_date:fd.get('admission_date')||null,student_phone:String(fd.get('student_phone')||'').trim()||null,address:String(fd.get('address')||'').trim()||null,status:fd.get('status')||'active'};
+    const {error}=await supabase.from('students').update(update).eq('id',studentId); if(error) throw error;
+    if(fd.get('session_id')&&fd.get('section_id')) {
+      const current=window.__snrdEditingEnrollmentId;
+      const enUpdate={session_id:Number(fd.get('session_id')),section_id:Number(fd.get('section_id')),roll_number:String(fd.get('roll_number')||'').trim()||null};
+      if(current){const r=await supabase.from('enrollments').update(enUpdate).eq('id',current);if(r.error)throw r.error;}
+    }
+    const photo=fd.get('student_photo'); if(photo&&photo.size){if(photo.size>10*1024*1024)throw new Error('Photo 10 MB से बड़ी है।');const ext=(photo.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');const path=`${studentId}/student_photo_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;const up=await supabase.storage.from('student-documents').upload(path,photo,{contentType:photo.type,upsert:false});if(up.error)throw up.error;const rec=await supabase.from('student_documents').insert({student_id:studentId,document_type:'student_photo',file_name:photo.name,storage_path:path,uploaded_by:currentUser?.id});if(rec.error)throw rec.error;}
+    toast('Student update सफल'); await showStudentProfile(studentId);
+  } catch(err){msg.textContent='Update error: '+(err.message||err);btn.disabled=false;btn.textContent='Save Changes';}
 }
 
 async function showStudentDocuments(studentId, students, docs) {
