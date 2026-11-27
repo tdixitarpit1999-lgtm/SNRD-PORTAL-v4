@@ -194,7 +194,7 @@ async function renderStudents() {
       <td>${safe(s.gender || '—')}</td>
       <td>${safe(s.admission_date || '—')}</td>
       <td>${safe(s.status || '—')}</td>
-      <td><button type="button" class="outline-btn student-docs-btn" data-student-id="${safe(s.id)}">Documents (${docCount})</button></td>
+      <td><button type="button" class="outline-btn student-profile-btn" data-student-id="${safe(s.id)}">Profile</button> <button type="button" class="outline-btn student-docs-btn" data-student-id="${safe(s.id)}">Documents (${docCount})</button></td>
     </tr>`;
   }).join('');
 
@@ -207,10 +207,10 @@ async function renderStudents() {
       <input id="studentSearch" type="search" placeholder="नाम / Admission No. खोजें" style="margin-top:14px;width:100%;padding:12px;border:1px solid #d5deea;border-radius:10px">
     </div>
     <div class="panel"><div class="table-wrap"><table>
-      <thead><tr><th>Admission No.</th><th>Student</th><th>Gender</th><th>Admission Date</th><th>Status</th><th>Documents</th></tr></thead>
+      <thead><tr><th>Admission No.</th><th>Student</th><th>Gender</th><th>Admission Date</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody id="studentRows">${rows || '<tr><td colspan="6">अभी कोई विद्यार्थी रिकॉर्ड नहीं है।</td></tr>'}</tbody>
     </table></div></div>
-    <div id="studentDocsPanel" class="panel hidden" style="margin-top:16px"></div>
+    <div id="studentProfilePanel" class="panel hidden" style="margin-top:16px"></div><div id="studentDocsPanel" class="panel hidden" style="margin-top:16px"></div>
     <style>
       .student-register-name{display:flex;align-items:center;gap:10px;min-width:150px}
       .student-register-photo,.student-register-avatar{width:44px;height:44px;min-width:44px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;background:#e6eefb;color:#174a8b;font-weight:700}
@@ -222,6 +222,32 @@ async function renderStudents() {
     $('studentRows')?.querySelectorAll('tr').forEach(row => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(q)));
   });
   document.querySelectorAll('.student-docs-btn').forEach(btn => btn.addEventListener('click', () => showStudentDocuments(btn.dataset.studentId, data, docs)));
+  document.querySelectorAll('.student-profile-btn').forEach(btn => btn.addEventListener('click', () => showStudentProfile(btn.dataset.studentId)));
+}
+
+async function showStudentProfile(studentId) {
+  const panel = $('studentProfilePanel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  panel.innerHTML = '<p>Student Profile लोड हो रहा है…</p>';
+  try {
+    const { data: student, error } = await supabase.from('students').select('*').eq('id', studentId).maybeSingle();
+    if (error) throw error;
+    if (!student) throw new Error('Student record नहीं मिला।');
+    const { data: enrollments, error: enrollmentError } = await supabase.from('enrollments').select('*').eq('student_id', studentId).order('enrollment_date', { ascending: false });
+    if (enrollmentError) console.warn('Enrollment profile load:', enrollmentError.message);
+    const { data: docs, error: docsError } = await supabase.from('student_documents').select('id,document_type,file_name,uploaded_at').eq('student_id', studentId).order('uploaded_at', { ascending: false });
+    if (docsError) console.warn('Document profile load:', docsError.message);
+    const field = (label, value) => `<div style="padding:10px;border:1px solid #e3e9f2;border-radius:10px"><small class="muted">${safe(label)}</small><div><b>${safe(value || '—')}</b></div></div>`;
+    const enrollmentHtml = (enrollments || []).length ? (enrollments || []).map(en => `<li>Roll: ${safe(en.roll_number || '—')} · Section ID: ${safe(en.section_id || '—')} · Session ID: ${safe(en.session_id || '—')} · Status: ${safe(en.status || '—')}</li>`).join('') : '<li>Enrollment detail उपलब्ध नहीं है।</li>';
+    const docHtml = (docs || []).length ? (docs || []).map(d => `<li>${safe(String(d.document_type || '').replaceAll('_',' '))} — ${safe(d.file_name || '')}</li>`).join('') : '<li>अभी कोई document नहीं।</li>';
+    panel.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">Student Profile</h3><button type="button" class="outline-btn" id="closeStudentProfile">Close</button></div><h4>${safe(student.full_name || 'Student')}</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0">${field('Admission Number',student.admission_number)}${field('PEN',student.pen_number)}${field('Date of Birth',student.date_of_birth)}${field('Gender',student.gender)}${field('Admission Date',student.admission_date)}${field('Student Mobile',student.student_phone)}${field('Status',student.status)}${field('Address',student.address)}</div><h4>Enrollment</h4><ul>${enrollmentHtml}</ul><h4>Documents (${(docs||[]).length})</h4><ul>${docHtml}</ul><p class="muted">यह Profile view अभी read-only है। Edit सुविधा अगले चरण में जोड़ी जाएगी।</p>`;
+    $('closeStudentProfile')?.addEventListener('click', () => panel.classList.add('hidden'));
+    panel.scrollIntoView({behavior:'smooth',block:'start'});
+  } catch (err) {
+    panel.innerHTML = `<h3>Student Profile</h3><p>${safe(err.message || err)}</p><button type="button" class="outline-btn" id="closeStudentProfile">Close</button>`;
+    $('closeStudentProfile')?.addEventListener('click', () => panel.classList.add('hidden'));
+  }
 }
 
 async function showStudentDocuments(studentId, students, docs) {
